@@ -68,8 +68,8 @@ const GAME_CONFIG = {
         exitDoorLocked: true,
     },
     camera: {
-        height: 45,
-        distance: 32,
+        height: 28,
+        distance: 20,
     },
 };
 
@@ -1646,8 +1646,8 @@ function setupEventListeners() {
         if (!gameState.isPlaying) return;
         e.preventDefault();
         const zoomSpeed = 2;
-        const minDist = 18;
-        const maxDist = 50;
+        const minDist = 12;
+        const maxDist = 45;
         const ratio = GAME_CONFIG.camera.height / GAME_CONFIG.camera.distance; // 保持高度/距离比例
         if (e.deltaY > 0) {
             // 滚轮向下 → 拉远
@@ -1860,7 +1860,7 @@ function setupEventListeners() {
             const currDist = Math.sqrt(dx * dx + dy * dy);
             const scale = pinchStartDist / currDist;
             const ratio = GAME_CONFIG.camera.height / GAME_CONFIG.camera.distance;
-            GAME_CONFIG.camera.distance = Math.max(18, Math.min(50, pinchStartCamDist * scale));
+            GAME_CONFIG.camera.distance = Math.max(12, Math.min(45, pinchStartCamDist * scale));
             GAME_CONFIG.camera.height = GAME_CONFIG.camera.distance * ratio;
         }
     }, { passive: true });
@@ -2647,7 +2647,7 @@ function updatePlayer(deltaTime) {
     // 手机电筒方向摇杆 → 控制人物朝向/手电筒方向，不影响场景旋转
     if (window._mobileAim && window._mobileAim.active) {
         // 直接修改手电筒目标位置来控制人物朝向
-        const aimDelta = window._mobileAim.x * 0.06;
+        const aimDelta = window._mobileAim.x * 0.10;
         if (gameState.flashlightTarget) {
             // 绕玩家旋转手电筒目标点
             const toTarget = new THREE.Vector3().subVectors(gameState.flashlightTarget.position, playerMesh.position);
@@ -2740,8 +2740,10 @@ function updatePlayer(deltaTime) {
         );
     }
     
-    // 鼠标控制手电筒方向
-    updateFlashlightDirection();
+    // 手电筒方向：仅在手机右摇杆不活跃时才用鼠标/键盘更新
+    if (!(window._mobileAim && window._mobileAim.active)) {
+        updateFlashlightDirection();
+    }
     
     // 人物身体朝向跟手电筒方向一致
     if (gameState.flashlightTarget) {
