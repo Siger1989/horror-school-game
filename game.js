@@ -2242,7 +2242,7 @@ function toggleHide() {
             gameState.preHidePosition = null;
         }
         if (gameState.flashlightLight) {
-            gameState.flashlightLight.intensity = gameState.flashlightOn && gameState.battery > 0 ? 3000 : 0;
+            gameState.flashlightLight.intensity = gameState.flashlightOn && gameState.battery > 0 ? 2250 : 0;
         }
         gameState.hideSpot = null;
         // 隐藏躲藏指示器
@@ -2587,7 +2587,7 @@ function updatePlayer(deltaTime) {
             const dist = 10;  // 目标距离
             // aimAngle: 摇杆相对屏幕的角度（0=上, PI/2=右, PI=下, -PI/2=左）
             // 需要转为世界坐标：屏幕上方=相机前方，cameraAngle是相机位置角度，前方=cameraAngle+PI
-            const worldAngle = aimAngle + cameraAngle + Math.PI;
+            const worldAngle = -aimAngle + cameraAngle + Math.PI;
             gameState.flashlightTarget.position.set(
                 playerMesh.position.x + Math.sin(worldAngle) * dist,
                 0,
@@ -2670,7 +2670,7 @@ function updatePlayer(deltaTime) {
         // 右摇杆激活：直接设置电筒方向（已在上面处理flashlightTarget）
         // 人物也快速跟随右摇杆方向
         const aimAngle = window._mobileAim.angle;
-        const worldAngle = aimAngle + cameraAngle + Math.PI;
+        const worldAngle = -aimAngle + cameraAngle + Math.PI;
         const targetRot = worldAngle;
         let diff = targetRot - playerMesh.rotation.y;
         while (diff > Math.PI) diff -= Math.PI * 2;
@@ -2714,7 +2714,7 @@ function updatePlayer(deltaTime) {
     }
     
     if (gameState.flashlightLight) {
-        gameState.flashlightLight.intensity = gameState.flashlightOn && gameState.battery > 0 ? 3000 : 0;
+        gameState.flashlightLight.intensity = gameState.flashlightOn && gameState.battery > 0 ? 2250 : 0;
     }
     
     // 更新躲藏提示
