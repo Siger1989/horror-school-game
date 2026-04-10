@@ -1740,7 +1740,7 @@ function setupEventListeners() {
                 const dx = adj.x - screenDragLastX;
                 const dy = adj.y - screenDragLastY;
                 // 水平滑动 → 旋转视角
-                cameraAngle += dx * 0.005;
+                cameraAngle += dx * 0.003;
                 // 垂直滑动 → 俯仰
                 mouseY = Math.max(-1, Math.min(1, mouseY - dy * 0.004));
                 screenDragLastX = adj.x;
