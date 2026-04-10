@@ -2,6 +2,16 @@
 // 逃离恐怖教学楼 - 游戏主脚本
 // ============================================
 
+// 辅助函数：获取视觉尺寸（竖屏旋转后宽高互换）
+function getVisualSize() {
+    const isPortraitMobile = ('ontouchstart' in window) && window.innerWidth < 769 && window.innerWidth < window.innerHeight;
+    if (isPortraitMobile) {
+        // 竖屏旋转为横屏时，视觉宽度=物理高度，视觉高度=物理宽度
+        return { width: window.innerHeight, height: window.innerWidth };
+    }
+    return { width: window.innerWidth, height: window.innerHeight };
+}
+
 // 游戏配置
 const GAME_CONFIG = {
     player: {
@@ -136,16 +146,8 @@ let playerMesh, flashlightBeam;
 let clock, deltaTime;
 
 // 输入状态
-const keys = {
-    w: false, a: false, s: false, d: false,
-    ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false,
-    Control: false,
-};
-let mouseX = 0, mouseY = 0;
 let cameraAngle = 0; // 相机绕玩家旋转角度（弧度）
-let isMiddleDragging = false; // 中键拖拽状态
-let middleDragStartX = 0; // 中键拖拽起始X
-let middleDragStartAngle = 0; // 中键拖拽起始角度
+let aimJoystickEverUsed = false; // 右摇杆是否使用过（一旦使用，电筒方向完全由右摇杆决定）
 
 // ============================================
 // 初始化游戏
@@ -175,14 +177,16 @@ function init() {
     moonLight.shadow.normalBias = 0.02;
     scene.add(moonLight);
     
-    const aspect = window.innerWidth / window.innerHeight;
-    camera = new THREE.PerspectiveCamera(60, aspect, 0.1, 1000);
+    const vs = getVisualSize();
+    camera = new THREE.PerspectiveCamera(60, vs.width / vs.height, 0.1, 1000);
     camera.position.set(0, GAME_CONFIG.camera.height, GAME_CONFIG.camera.distance);
     camera.lookAt(0, 0, 0);
     
     const canvas = document.getElementById('game-canvas');
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(vs.width, vs.height);
+    canvas.style.width = vs.width + 'px';
+    canvas.style.height = vs.height + 'px';
     renderer.localClippingEnabled = true;  // 启用局部裁剪平面（视线遮挡）
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -1573,96 +1577,14 @@ function setupEventListeners() {
         if (e.touches.length > 1) e.preventDefault();
     }, { passive: false });
     
-    window.addEventListener('keydown', (e) => {
-        if (keys.hasOwnProperty(e.key)) {
-            keys[e.key] = true;
-        }
-        if (e.key === 'f' || e.key === 'F') {
-            toggleFlashlight();
-        }
-        if (e.key === 'v' || e.key === 'V') {
-            gameState.isRunning = true;
-        }
-        if (e.key === 'e' || e.key === 'E') {
-            toggleHide();
-        }
-        // 空格键：跳跃或翻越
-        if (e.key === ' ' && gameState.isPlaying && !gameState.isHiding) {
-            e.preventDefault();
-            if (gameState.nearVaultObstacle && !gameState.isJumping && !gameState.isVaulting) {
-                startVault();
-            } else if (!gameState.isJumping && !gameState.isVaulting && gameState.playerY <= 0.01) {
-                startJump();
-            }
-        }
-    });
-    
-    window.addEventListener('keyup', (e) => {
-        if (keys.hasOwnProperty(e.key)) {
-            keys[e.key] = false;
-        }
-        if (e.key === 'v' || e.key === 'V') {
-            gameState.isRunning = false;
-        }
-    });
-    
-    window.addEventListener('mousemove', (e) => {
-        mouseX = (e.clientX / window.innerWidth) * 2 - 1;
-        mouseY = -(e.clientY / window.innerHeight) * 2 + 1;
-        // 中键拖拽旋转视角
-        if (isMiddleDragging) {
-            const dx = e.clientX - middleDragStartX;
-            cameraAngle = middleDragStartAngle + dx * 0.005; // 灵敏度系数
-        }
-    });
-    
-    // 鼠标左键攻击
-    window.addEventListener('mousedown', (e) => {
-        if (e.button === 0 && gameState.isPlaying && !gameState.isHiding) {
-            performAttack();
-        }
-        // 中键按下开始旋转
-        if (e.button === 1 && gameState.isPlaying) {
-            e.preventDefault(); // 阻止自动滚动
-            isMiddleDragging = true;
-            middleDragStartX = e.clientX;
-            middleDragStartAngle = cameraAngle;
-        }
-    });
-    
-    window.addEventListener('mouseup', (e) => {
-        if (e.button === 1) {
-            isMiddleDragging = false;
-        }
-    });
-    
-    // 阻止中键的自动滚动行为
-    window.addEventListener('auxclick', (e) => {
-        if (e.button === 1) e.preventDefault();
-    });
-    
-    // 鼠标滚轮缩放画面
-    window.addEventListener('wheel', (e) => {
-        if (!gameState.isPlaying) return;
-        e.preventDefault();
-        const zoomSpeed = 2;
-        const minDist = 12;
-        const maxDist = 45;
-        const ratio = GAME_CONFIG.camera.height / GAME_CONFIG.camera.distance; // 保持高度/距离比例
-        if (e.deltaY > 0) {
-            // 滚轮向下 → 拉远
-            GAME_CONFIG.camera.distance = Math.min(maxDist, GAME_CONFIG.camera.distance + zoomSpeed);
-        } else {
-            // 滚轮向上 → 拉近
-            GAME_CONFIG.camera.distance = Math.max(minDist, GAME_CONFIG.camera.distance - zoomSpeed);
-        }
-        GAME_CONFIG.camera.height = GAME_CONFIG.camera.distance * ratio;
-    }, { passive: false });
-    
     window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
+        const vs = getVisualSize();
+        camera.aspect = vs.width / vs.height;
         camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setSize(vs.width, vs.height);
+        const canvas = document.getElementById('game-canvas');
+        canvas.style.width = vs.width + 'px';
+        canvas.style.height = vs.height + 'px';
     });
     
     document.getElementById('start-button').addEventListener('click', () => {
@@ -1871,9 +1793,13 @@ function setupEventListeners() {
         }
     }, { passive: true });
 
-    // ===== 右侧电筒方向摇杆（只控制人物朝向，独立不冲突） =====
+    // ===== 右侧电筒方向摇杆（绝对角度控制电筒方向） =====
     let aimJoystickActive = false;
     let aimJoystickX = 0;
+    let aimJoystickY = 0;
+    let aimJoystickAngle = 0;       // 摇杆偏移的绝对角度（弧度，相对于屏幕上方=0）
+    let aimJoystickIntensity = 0;   // 摇杆偏移强度 0~1
+    let aimJoystickLastAngle = 0;   // 松开时保持的最后角度
     let aimJoystickTouchId = null;
     let aimJoystickCenterX = 0, aimJoystickCenterY = 0;
     const AIM_JOYSTICK_MAX_R = 42;
@@ -1887,10 +1813,13 @@ function setupEventListeners() {
             const touch = e.changedTouches[0];
             aimJoystickTouchId = touch.identifier;
             aimJoystickActive = true;
+            aimJoystickEverUsed = true;
             aimJoystickThumb.classList.add('active');
             aimJoystickCenterX = touch.clientX;
             aimJoystickCenterY = touch.clientY;
             aimJoystickX = 0;
+            aimJoystickY = 0;
+            aimJoystickIntensity = 0;
         }, { passive: false });
 
         aimJoystickZone.addEventListener('touchmove', (e) => {
@@ -1911,6 +1840,14 @@ function setupEventListeners() {
                     const dist = Math.sqrt(dx * dx + dy * dy);
                     if (dist > AIM_JOYSTICK_MAX_R) { dx = dx / dist * AIM_JOYSTICK_MAX_R; dy = dy / dist * AIM_JOYSTICK_MAX_R; }
                     aimJoystickX = dx / AIM_JOYSTICK_MAX_R;
+                    aimJoystickY = dy / AIM_JOYSTICK_MAX_R;
+                    aimJoystickIntensity = Math.min(dist, AIM_JOYSTICK_MAX_R) / AIM_JOYSTICK_MAX_R;
+                    // 计算绝对角度：dx正=右, dy正=下
+                    // 映射到游戏世界：右→+X(sin), 下→-Z(-cos)，所以角度=atan2(dx, -dy)
+                    if (dist > 5) {  // 死区5px，避免微小抖动
+                        aimJoystickAngle = Math.atan2(dx, -dy);
+                        aimJoystickLastAngle = aimJoystickAngle;
+                    }
                     aimJoystickThumb.style.left = (41 + dx) + 'px';
                     aimJoystickThumb.style.top = (41 + dy) + 'px';
                     break;
@@ -1925,7 +1862,8 @@ function setupEventListeners() {
                 if (touch.identifier === aimJoystickTouchId) {
                     aimJoystickActive = false;
                     aimJoystickTouchId = null;
-                    aimJoystickX = 0;
+                    aimJoystickIntensity = 0;
+                    // 松开摇杆时电筒方向保持，不清零角度
                     aimJoystickThumb.style.left = '41px';
                     aimJoystickThumb.style.top = '41px';
                     aimJoystickThumb.classList.remove('active');
@@ -1937,17 +1875,21 @@ function setupEventListeners() {
         aimJoystickZone.addEventListener('touchcancel', (e) => {
             aimJoystickActive = false;
             aimJoystickTouchId = null;
-            aimJoystickX = 0;
+            aimJoystickIntensity = 0;
             aimJoystickThumb.style.left = '41px';
             aimJoystickThumb.style.top = '41px';
             aimJoystickThumb.classList.remove('active');
         }, { passive: false });
     }
 
-    // 电筒摇杆输入 — 只控制人物朝向（cameraAngle）
+    // 电筒摇杆输入 — 绝对角度控制电筒方向
     window._mobileAim = {
         get active() { return isMobile && aimJoystickActive; },
-        get x() { return aimJoystickX; }
+        get x() { return aimJoystickX; },
+        get y() { return aimJoystickY; },
+        get angle() { return aimJoystickAngle; },           // 当前绝对角度（激活时）
+        get intensity() { return aimJoystickIntensity; },    // 偏移强度
+        get lastAngle() { return aimJoystickLastAngle; }     // 即使松开也保持最后角度
     };
 
 
@@ -2352,30 +2294,16 @@ function updateHidePrompt() {
 function updateFlashlightDirection() {
     if (!playerMesh || !gameState.flashlightTarget || !camera) return;
     
-    // 用unproject把鼠标屏幕位置转为世界坐标
-    const vector = new THREE.Vector3(mouseX, mouseY, 0.5);
-    vector.unproject(camera);
-    
-    // 从相机位置出发，沿着鼠标方向射到地面(y=0)
-    const ray = vector.sub(camera.position).normalize();
-    if (ray.y < -0.01) {
-        const t = -camera.position.y / ray.y;
-        const targetX = camera.position.x + ray.x * t;
-        const targetZ = camera.position.z + ray.z * t;
-        
-        gameState.flashlightTarget.position.set(targetX, 0, targetZ);
-    }
+    // 不再使用鼠标控制电筒方向
+    // PC端：电筒跟随移动方向；手机端：由右摇杆控制（在updatePlayer中处理）
     
     // 物理光圈：根据手电筒到目标的距离动态调整锥角
-    // 近处→大角度（散光照大圈），远处→小角度（聚焦照远但圈小）
     if (gameState.flashlightLight) {
         const lightPos = gameState.flashlightLight.position;
         const targetPos = gameState.flashlightTarget.position;
         const dist = lightPos.distanceTo(targetPos);
-        // 映射：dist 5~50 → angle 0.5~0.15 (弧度)
-        // 近处约29度，远处约9度——符合物理：远光聚焦
-        const minAngle = 0.12;  // 最远时很聚焦
-        const maxAngle = 0.5;   // 最近时散开
+        const minAngle = 0.12;
+        const maxAngle = 0.5;
         const minDist = 3;
         const maxDist = 45;
         const t2 = Math.max(0, Math.min(1, (dist - minDist) / (maxDist - minDist)));
@@ -2632,52 +2560,41 @@ function updatePlayer(deltaTime) {
     
     const moveSpeed = gameState.isRunning ? GAME_CONFIG.player.runSpeed : GAME_CONFIG.player.speed;
     const moveDir = new THREE.Vector3(0, 0, 0);
-    
-    if (keys.w || keys.ArrowUp) moveDir.z -= 1;
-    if (keys.s || keys.ArrowDown) moveDir.z += 1;
-    if (keys.a || keys.ArrowLeft) moveDir.x -= 1;
-    if (keys.d || keys.ArrowRight) moveDir.x += 1;
-    
+
     // 手机虚拟摇杆输入
     if (window._mobileJoystick && window._mobileJoystick.active) {
         moveDir.x += window._mobileJoystick.x;
         moveDir.z += window._mobileJoystick.y;
     }
     
-    // 手机电筒方向摇杆 → 控制人物朝向/手电筒方向，不影响场景旋转
+    // 提前计算旋转后的移动方向（电筒回位逻辑和位移都需要）
+    let rotatedX = 0, rotatedZ = 0;
+    if (moveDir.length() > 0) {
+        moveDir.normalize();
+        const cosA = Math.cos(cameraAngle);
+        const sinA = Math.sin(cameraAngle);
+        rotatedX = moveDir.x * cosA + moveDir.z * sinA;
+        rotatedZ = -moveDir.x * sinA + moveDir.z * cosA;
+    }
+    
+    // 手机电筒方向摇杆 → 绝对角度控制电筒方向
     if (window._mobileAim && window._mobileAim.active) {
-        // 直接修改手电筒目标位置来控制人物朝向
-        const aimDelta = window._mobileAim.x * 0.10;
+        // 右摇杆激活时：直接用摇杆的绝对角度设置电筒方向
+        const aimAngle = window._mobileAim.angle;
         if (gameState.flashlightTarget) {
-            // 绕玩家旋转手电筒目标点
-            const toTarget = new THREE.Vector3().subVectors(gameState.flashlightTarget.position, playerMesh.position);
-            toTarget.y = 0;
-            if (toTarget.length() < 0.5) {
-                // 如果目标太近，基于当前朝向初始化
-                const currentAngle = playerMesh.rotation.y;
-                toTarget.set(Math.sin(currentAngle), 0, Math.cos(currentAngle)).multiplyScalar(10);
-            }
-            const currentAngle = Math.atan2(toTarget.x, toTarget.z);
-            const newAngle = currentAngle + aimDelta;
-            const dist = toTarget.length();
+            const dist = 10;  // 目标距离
+            // aimAngle: 相对于屏幕上方(0)的角度，需要加上相机旋转角度转为世界坐标
+            const worldAngle = aimAngle + cameraAngle;
             gameState.flashlightTarget.position.set(
-                playerMesh.position.x + Math.sin(newAngle) * dist,
+                playerMesh.position.x + Math.sin(worldAngle) * dist,
                 0,
-                playerMesh.position.z + Math.cos(newAngle) * dist
+                playerMesh.position.z + Math.cos(worldAngle) * dist
             );
         }
     }
     
     if (moveDir.length() > 0) {
-        moveDir.normalize();
-        
-        // 根据相机旋转角度调整移动方向，使WASD始终相对于视角
-        const cosA = Math.cos(cameraAngle);
-        const sinA = Math.sin(cameraAngle);
-        const rotatedX = moveDir.x * cosA + moveDir.z * sinA;
-        const rotatedZ = -moveDir.x * sinA + moveDir.z * cosA;
-        
-        // 计算新位置
+        // 计算新位置（rotatedX/rotatedZ 已在前面计算）
         const newX = playerMesh.position.x + rotatedX * moveSpeed * deltaTime;
         const newZ = playerMesh.position.z + rotatedZ * moveSpeed * deltaTime;
         
@@ -2740,10 +2657,35 @@ function updatePlayer(deltaTime) {
         );
     }
     
-    // 手电筒方向：仅在手机右摇杆不活跃时才用鼠标/键盘更新
-    if (!(window._mobileAim && window._mobileAim.active)) {
-        updateFlashlightDirection();
+    // 手电筒方向控制：
+    // 1. 右摇杆激活时 → 直接控制电筒方向（绝对角度）
+    // 2. 右摇杆未激活 + 正在移动 → 电筒方向缓慢回到移动方向
+    // 3. 右摇杆未激活 + 不移动 → 电筒方向保持
+    if (!(window._mobileAim && window._mobileAim.active) && gameState.isMoving) {
+        // 移动时电筒方向缓慢回到移动方向
+        if (gameState.flashlightTarget) {
+            const toTarget = new THREE.Vector3().subVectors(gameState.flashlightTarget.position, playerMesh.position);
+            toTarget.y = 0;
+            const currentFlashAngle = toTarget.length() > 0.5 ? Math.atan2(toTarget.x, toTarget.z) : playerMesh.rotation.y;
+            
+            // 计算移动方向的世界角度
+            const moveAngle = Math.atan2(rotatedX, rotatedZ);
+            
+            // 平滑插值：缓慢回到移动方向（速度2.0弧度/秒，约1.5秒完成90度回位）
+            let diff = moveAngle - currentFlashAngle;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            const lerpAngle = currentFlashAngle + diff * Math.min(2.0 * deltaTime, 1);
+            
+            const dist = Math.max(toTarget.length(), 10);
+            gameState.flashlightTarget.position.set(
+                playerMesh.position.x + Math.sin(lerpAngle) * dist,
+                0,
+                playerMesh.position.z + Math.cos(lerpAngle) * dist
+            );
+        }
     }
+    updateFlashlightDirection();
     
     // 人物身体朝向跟手电筒方向一致
     if (gameState.flashlightTarget) {

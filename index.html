@@ -25,8 +25,6 @@
         
         #game-canvas {
             display: block;
-            width: 100%;
-            height: 100%;
         }
         
         /* UI 覆盖层 */
@@ -420,7 +418,7 @@
         /* 虚拟摇杆 — 左下角（移动） */
         #joystick-zone {
             position: absolute;
-            left: 16px; bottom: 16px;
+            left: 28px; bottom: 28px;
             width: 120px; height: 120px;
             pointer-events: auto;
             touch-action: none;
@@ -451,7 +449,7 @@
         /* 右下角电筒方向摇杆 — 只控制人物朝向 */
         #aim-joystick-zone {
             position: absolute;
-            right: 16px; bottom: 16px;
+            right: 28px; bottom: 28px;
             width: 120px; height: 120px;
             pointer-events: auto;
             touch-action: none;
@@ -504,7 +502,7 @@
         }
         /* 攻击 — 右上区域 */
         #btn-attack {
-            right: 16px; bottom: 170px;
+            right: 28px; bottom: 170px;
             background: rgba(255, 50, 50, 0.2);
             border-color: rgba(255, 80, 80, 0.3);
         }
@@ -514,7 +512,7 @@
         }
         /* 跑步 — 左摇杆右侧 */
         #btn-run {
-            left: 148px; bottom: 20px;
+            left: 160px; bottom: 32px;
             background: rgba(255, 165, 0, 0.15);
             border-color: rgba(255, 165, 0, 0.25);
         }
@@ -524,7 +522,7 @@
         }
         /* 躲藏 — 左摇杆右上 */
         #btn-hide {
-            left: 148px; bottom: 72px;
+            left: 160px; bottom: 84px;
             background: rgba(0, 200, 255, 0.12);
             border-color: rgba(0, 200, 255, 0.25);
         }
@@ -534,7 +532,7 @@
         }
         /* 手电筒 — 右上攻击上方 */
         #btn-flashlight {
-            right: 16px; bottom: 224px;
+            right: 28px; bottom: 224px;
             background: rgba(255, 255, 100, 0.12);
             border-color: rgba(255, 255, 100, 0.25);
         }
@@ -544,7 +542,7 @@
         }
         /* 跳跃 — 右上攻击左侧 */
         #btn-jump {
-            right: 68px; bottom: 170px;
+            right: 80px; bottom: 170px;
             background: rgba(100, 255, 100, 0.12);
             border-color: rgba(100, 255, 100, 0.25);
         }
@@ -693,17 +691,17 @@
         }
         .room-actions .lobby-btn { flex: 1; }
 
-        /* 手机端HUD适配 + 竖屏强制横屏 */
+        /* 手机端HUD适配 + 横屏优化 */
         @media (max-width: 768px) {
-            #game-info { font-size: 12px; top: 8px; left: 8px; }
-            .info-item { padding: 4px 8px; margin-bottom: 4px; }
-            #health-bar-container { width: 180px; height: 16px; top: 8px; }
-            #health-text { font-size: 10px; }
-            #poison-indicator { top: 30px; font-size: 12px; padding: 4px 12px; }
-            #hide-prompt { bottom: 200px; font-size: 14px; }
-            #vault-prompt { bottom: 200px; font-size: 14px; }
-            #hiding-indicator { font-size: 16px; padding: 10px 20px; }
-            #hiding-indicator .hint { font-size: 11px; }
+            #game-info { font-size: 11px; top: 6px; left: 6px; }
+            .info-item { padding: 3px 6px; margin-bottom: 3px; }
+            #health-bar-container { width: 140px; height: 14px; top: 6px; }
+            #health-text { font-size: 9px; }
+            #poison-indicator { top: 26px; font-size: 11px; padding: 3px 10px; }
+            #hide-prompt { bottom: 200px; font-size: 13px; }
+            #vault-prompt { bottom: 200px; font-size: 13px; }
+            #hiding-indicator { font-size: 14px; padding: 8px 16px; }
+            #hiding-indicator .hint { font-size: 10px; }
             #start-screen h1 { font-size: 28px; }
             #start-screen p { font-size: 14px; padding: 0 20px; }
             .controls-info { display: none; }
@@ -726,7 +724,7 @@
             .room-box h2 { font-size: 18px; }
             .room-actions { gap: 8px; margin-top: 8px; }
         }
-        /* 竖屏时CSS强制旋转为横屏 */
+        /* 竖屏时CSS强制旋转为横屏构图 */
         @media (max-width: 768px) and (orientation: portrait) {
             body { overflow: hidden; }
             #game-container {
@@ -739,9 +737,53 @@
                 transform-origin: center center;
             }
         }
+        /* 横屏时优化布局 */
+        @media (max-width: 768px) and (orientation: landscape) {
+            #game-info { font-size: 11px; top: 4px; left: 4px; }
+            .info-item { padding: 2px 5px; margin-bottom: 2px; }
+            #health-bar-container { width: 120px; height: 12px; top: 4px; }
+            #health-text { font-size: 8px; }
+            #rotate-hint { display: none !important; }
+        }
+        /* 竖屏提示旋转 */
+        #rotate-hint {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            color: #fff;
+            text-align: center;
+        }
+        #rotate-hint .icon {
+            font-size: 48px;
+            animation: rotateHint 2s ease-in-out infinite;
+        }
+        #rotate-hint p {
+            margin-top: 16px;
+            font-size: 16px;
+            color: #aaa;
+        }
+        @keyframes rotateHint {
+            0%, 100% { transform: rotate(0deg); }
+            25% { transform: rotate(90deg); }
+            75% { transform: rotate(90deg); }
+        }
+        @media (max-width: 768px) and (orientation: portrait) {
+            #rotate-hint { display: flex !important; }
+        }
     </style>
 </head>
 <body>
+    <!-- 竖屏旋转提示 -->
+    <div id="rotate-hint">
+        <div class="icon">📱</div>
+        <p>请旋转手机至横屏<br>以获得最佳体验</p>
+    </div>
     <div id="game-container">
         <canvas id="game-canvas"></canvas>
         
