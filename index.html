@@ -377,8 +377,8 @@
             transition: background 0.8s;
         }
         
-        /* 画面抖动容器 */
-        #game-container.shaking {
+        /* 画面抖动 — 作用在canvas上，避免覆盖container的旋转transform */
+        #game-canvas.shaking {
             animation: screenShake 0.1s infinite;
         }
         
@@ -391,7 +391,7 @@
         }
         
         /* 强烈抖动（受伤时） */
-        #game-container.heavy-shake {
+        #game-canvas.heavy-shake {
             animation: heavyShake 0.08s infinite;
         }
         

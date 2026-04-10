@@ -2515,17 +2515,17 @@ function updateEnemyVisibility() {
 // 低血量心跳节奏抖动
 let heartbeatShakeTimer = 0;
 function updateAtmosphereShake() {
-    const container = document.getElementById('game-container');
-    if (!container || !playerMesh) return;
+    const canvas = document.getElementById('game-canvas');
+    if (!canvas || !playerMesh) return;
     
     // 受伤抖动优先
-    if (container.classList.contains('heavy-shake') || container.classList.contains('shaking')) return;
+    if (canvas.classList.contains('heavy-shake') || canvas.classList.contains('shaking')) return;
     
     const hpRatio = gameState.playerHP / gameState.maxPlayerHP;
     
     // 只有血量低于20%才有心跳抖动
     if (hpRatio >= 0.2) {
-        container.classList.remove('shaking');
+        canvas.classList.remove('shaking');
         heartbeatShakeTimer = 0;
         return;
     }
@@ -2537,9 +2537,9 @@ function updateAtmosphereShake() {
     
     // 心跳双击：0~0.12s 第一跳，0.2~0.32s 第二跳，中间长停顿
     if ((beatPhase < 0.12) || (beatPhase > 0.2 && beatPhase < 0.32)) {
-        container.classList.add('shaking');
+        canvas.classList.add('shaking');
     } else {
-        container.classList.remove('shaking');
+        canvas.classList.remove('shaking');
     }
 }
 
@@ -3313,14 +3313,14 @@ function takeDamage(amount) {
     setTimeout(() => overlay.remove(), 300);
     
     // 画面抖动——受伤越重抖动越剧烈
-    const container = document.getElementById('game-container');
-    if (container) {
+    const canvas = document.getElementById('game-canvas');
+    if (canvas) {
         if (amount >= 25) {
-            container.classList.add('heavy-shake');
-            setTimeout(() => container.classList.remove('heavy-shake'), 400);
+            canvas.classList.add('heavy-shake');
+            setTimeout(() => canvas.classList.remove('heavy-shake'), 400);
         } else {
-            container.classList.add('shaking');
-            setTimeout(() => container.classList.remove('shaking'), 250);
+            canvas.classList.add('shaking');
+            setTimeout(() => canvas.classList.remove('shaking'), 250);
         }
     }
     
@@ -3979,10 +3979,10 @@ function gameOver(victory) {
     gameState.isPlaying = false;
     
     // 停止所有抖动效果
-    const container = document.getElementById('game-container');
-    if (container) {
-        container.classList.remove('shaking');
-        container.classList.remove('heavy-shake');
+    const canvas = document.getElementById('game-canvas');
+    if (canvas) {
+        canvas.classList.remove('shaking');
+        canvas.classList.remove('heavy-shake');
     }
     heartbeatShakeTimer = 0;
     
@@ -4011,10 +4011,10 @@ function gameOver(victory) {
 
 function restartGame() {
     // 清除抖动状态
-    const container = document.getElementById('game-container');
-    if (container) {
-        container.classList.remove('shaking');
-        container.classList.remove('heavy-shake');
+    const canvas = document.getElementById('game-canvas');
+    if (canvas) {
+        canvas.classList.remove('shaking');
+        canvas.classList.remove('heavy-shake');
     }
     heartbeatShakeTimer = 0;
     
