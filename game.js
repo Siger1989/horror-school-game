@@ -146,7 +146,7 @@ let playerMesh, flashlightBeam;
 let clock, deltaTime;
 
 // 输入状态
-let cameraAngle = 0; // 相机绕玩家旋转角度（弧度）
+let cameraAngle = -Math.PI * 0.5; // 相机绕玩家旋转角度（弧度），初始-PI/2让相机在X负方向（走廊西端=后方）
 let aimJoystickEverUsed = false; // 右摇杆是否使用过（一旦使用，电筒方向完全由右摇杆决定）
 
 // ============================================
@@ -184,9 +184,8 @@ function init() {
     
     const canvas = document.getElementById('game-canvas');
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    renderer.setSize(vs.width, vs.height);
-    canvas.style.width = vs.width + 'px';
-    canvas.style.height = vs.height + 'px';
+    // 设置渲染分辨率，但不设置内联style（让CSS控制显示尺寸）
+    renderer.setSize(vs.width, vs.height, false);  // false = 不设置style
     renderer.localClippingEnabled = true;  // 启用局部裁剪平面（视线遮挡）
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -880,8 +879,14 @@ function createPlayer() {
     scene.add(flashlightLight);
     
     // target单独添加到scene中 - 这样target.position就是世界坐标
+    // 初始方向：玩家在走廊西端(Z=0)朝东走，flashlightTarget在前方（X正方向）
     const flashlightTarget = new THREE.Object3D();
-    flashlightTarget.position.set(0, 0, 10);
+    const playerStartX = -GAME_CONFIG.scene.gridWidth * GAME_CONFIG.scene.tileSize / 2 + 8;
+    flashlightTarget.position.set(
+        playerStartX + 10,  // X正方向=走廊前方
+        0,
+        0
+    );
     scene.add(flashlightTarget);
     flashlightLight.target = flashlightTarget;
     
@@ -1581,10 +1586,7 @@ function setupEventListeners() {
         const vs = getVisualSize();
         camera.aspect = vs.width / vs.height;
         camera.updateProjectionMatrix();
-        renderer.setSize(vs.width, vs.height);
-        const canvas = document.getElementById('game-canvas');
-        canvas.style.width = vs.width + 'px';
-        canvas.style.height = vs.height + 'px';
+        renderer.setSize(vs.width, vs.height, false);  // false = 不设置style，让CSS控制
     });
     
     document.getElementById('start-button').addEventListener('click', () => {
@@ -2658,25 +2660,38 @@ function updatePlayer(deltaTime) {
     }
     
     // 手电筒方向控制：
-    // 1. 右摇杆激活时 → 直接控制电筒方向（绝对角度）
-    // 2. 右摇杆未激活 + 正在移动 → 电筒方向缓慢回到移动方向
-    // 3. 右摇杆未激活 + 不移动 → 电筒方向保持
-    if (!(window._mobileAim && window._mobileAim.active) && gameState.isMoving) {
-        // 移动时电筒方向缓慢回到移动方向
+    // 1. 右摇杆激活时 → 直接控制电筒方向（绝对角度）+ 人物跟随
+    // 2. 右摇杆未激活 + 正在移动 → 电筒方向缓慢回到移动方向，人物直接转移动方向
+    // 3. 右摇杆未激活 + 不移动 → 电筒方向保持，人物保持
+    const aimActive = window._mobileAim && window._mobileAim.active;
+    
+    if (aimActive) {
+        // 右摇杆激活：直接设置电筒方向（已在上面处理flashlightTarget）
+        // 人物也快速跟随右摇杆方向
+        const aimAngle = window._mobileAim.angle;
+        const worldAngle = aimAngle + cameraAngle;
+        const targetRot = worldAngle;
+        let diff = targetRot - playerMesh.rotation.y;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        playerMesh.rotation.y += diff * Math.min(10 * deltaTime, 1);
+    } else if (gameState.isMoving && (rotatedX !== 0 || rotatedZ !== 0)) {
+        // 移动中且无右摇杆：人物直接转向移动方向
+        const moveAngle = Math.atan2(rotatedX, rotatedZ);
+        let diff = moveAngle - playerMesh.rotation.y;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        playerMesh.rotation.y += diff * Math.min(10 * deltaTime, 1);
+        
+        // 电筒方向缓慢回到移动方向（2.0弧度/秒）
         if (gameState.flashlightTarget) {
             const toTarget = new THREE.Vector3().subVectors(gameState.flashlightTarget.position, playerMesh.position);
             toTarget.y = 0;
             const currentFlashAngle = toTarget.length() > 0.5 ? Math.atan2(toTarget.x, toTarget.z) : playerMesh.rotation.y;
-            
-            // 计算移动方向的世界角度
-            const moveAngle = Math.atan2(rotatedX, rotatedZ);
-            
-            // 平滑插值：缓慢回到移动方向（速度2.0弧度/秒，约1.5秒完成90度回位）
-            let diff = moveAngle - currentFlashAngle;
-            while (diff > Math.PI) diff -= Math.PI * 2;
-            while (diff < -Math.PI) diff += Math.PI * 2;
-            const lerpAngle = currentFlashAngle + diff * Math.min(2.0 * deltaTime, 1);
-            
+            let fDiff = moveAngle - currentFlashAngle;
+            while (fDiff > Math.PI) fDiff -= Math.PI * 2;
+            while (fDiff < -Math.PI) fDiff += Math.PI * 2;
+            const lerpAngle = currentFlashAngle + fDiff * Math.min(2.0 * deltaTime, 1);
             const dist = Math.max(toTarget.length(), 10);
             gameState.flashlightTarget.position.set(
                 playerMesh.position.x + Math.sin(lerpAngle) * dist,
@@ -2685,23 +2700,9 @@ function updatePlayer(deltaTime) {
             );
         }
     }
-    updateFlashlightDirection();
+    // else: 两边都停 → 方向保持不变
     
-    // 人物身体朝向跟手电筒方向一致
-    if (gameState.flashlightTarget) {
-        const toTarget = new THREE.Vector3();
-        toTarget.subVectors(gameState.flashlightTarget.position, playerMesh.position);
-        toTarget.y = 0;
-        if (toTarget.length() > 0.1) {
-            const targetAngle = Math.atan2(toTarget.x, toTarget.z);
-            // 平滑转向
-            const currentAngle = playerMesh.rotation.y;
-            let diff = targetAngle - currentAngle;
-            while (diff > Math.PI) diff -= Math.PI * 2;
-            while (diff < -Math.PI) diff += Math.PI * 2;
-            playerMesh.rotation.y = currentAngle + diff * Math.min(8 * deltaTime, 1);
-        }
-    }
+    updateFlashlightDirection();
     
     if (gameState.flashlightOn && gameState.isRunning) {
         gameState.battery = Math.max(0, gameState.battery - GAME_CONFIG.player.batteryDrainRate * deltaTime * 2);
@@ -4043,6 +4044,17 @@ function restartGame() {
     playerMesh.visible = true;
     // 重生在走廊西端
     playerMesh.position.set(-GAME_CONFIG.scene.gridWidth * GAME_CONFIG.scene.tileSize / 2 + 8, 0, 0);
+    
+    // 重置相机角度和电筒方向
+    cameraAngle = -Math.PI * 0.5;
+    aimJoystickEverUsed = false;
+    if (gameState.flashlightTarget) {
+        gameState.flashlightTarget.position.set(
+            playerMesh.position.x + 10,
+            0,
+            0
+        );
+    }
     
     gameState.keys.forEach((key) => {
         key.collected = false;
