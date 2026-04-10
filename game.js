@@ -869,7 +869,7 @@ function createPlayer() {
     playerGroup.add(flashHead);
     
     // 手电筒 - 添加到scene而不是playerGroup，避免玩家旋转影响方向
-    const flashlightLight = new THREE.SpotLight(0xddeeff, 3000, 45, Math.PI / 6, 0.7, 2);
+    const flashlightLight = new THREE.SpotLight(0xddeeff, 3000, 25, Math.PI / 6, 0.7, 3);
     flashlightLight.position.set(0.4, 1.2, 0.3);
     flashlightLight.castShadow = true;
     flashlightLight.shadow.mapSize.width = 1024;
