@@ -2729,7 +2729,7 @@ function updatePlayer(deltaTime) {
     
     camera.position.x = playerMesh.position.x + Math.sin(cameraAngle) * GAME_CONFIG.camera.distance;
     camera.position.z = playerMesh.position.z + Math.cos(cameraAngle) * GAME_CONFIG.camera.distance;
-    camera.lookAt(playerMesh.position.x, 0, playerMesh.position.z);
+    camera.lookAt(playerMesh.position.x, 1.2, playerMesh.position.z);
     
     // 更新手电筒位置跟随玩家（不旋转）
     if (gameState.flashlightLight) {
