@@ -1,0 +1,9 @@
+{
+  "framework": null,
+  "buildCommand": "echo 'Static site - no build needed'",
+  "outputDirectory": ".",
+  "rewrites": [
+    { "source": "/api/peerjs/:path*", "destination": "/api/peerjs" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ]
+}

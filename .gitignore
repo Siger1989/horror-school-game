@@ -1,0 +1,10 @@
+node_modules/
+edgeone-deploy/
+dist/
+functions/
+.vercel/
+*.tmp
+*.log
+github-repo-result.txt
+edgeone-test.txt
+package-lock.json

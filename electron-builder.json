@@ -1,0 +1,22 @@
+{
+  "appId": "com.gamedev.horror-school",
+  "productName": "逃离恐怖教学楼",
+  "directories": {
+    "output": "dist"
+  },
+  "win": {
+    "target": "portable"
+  },
+  "electronDownload": {
+    "mirror": "https://cdn.npmmirror.com/binaries/electron/"
+  },
+  "files": [
+    "main.js",
+    "index.html",
+    "game.js",
+    "package.json"
+  ],
+  "extraMetadata": {
+    "main": "main.js"
+  }
+}

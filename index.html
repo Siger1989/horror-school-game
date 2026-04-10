@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>逃离恐怖教学楼 - 3D 恐怖游戏 Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            background: #000;
+        }
+        
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #game-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        
+        /* UI 覆盖层 */
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        /* 游戏信息面板 */
+        #game-info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #fff;
+            font-size: 16px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            pointer-events: none;
+        }
+        
+        .info-item {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 5px;
+            border-left: 3px solid #ff0000;
+        }
+        
+        /* 玩家血条 */
+        #health-bar-container {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 300px;
+            height: 22px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 2px solid #880000;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        #health-bar {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(180deg, #ff3333 0%, #cc0000 50%, #990000 100%);
+            transition: width 0.3s ease;
+        }
+        
+        #health-text {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 12px;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px #000;
+        }
+        
+        /* 毒液伤害提示 */
+        #poison-indicator {
+            position: absolute;
+            top: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 6px 18px;
+            background: rgba(0, 80, 0, 0.8);
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+            color: #00ff00;
+            font-size: 14px;
+            font-weight: bold;
+            display: none;
+            pointer-events: none;
+        }
+        
+        /* 翻越提示 */
+        #vault-prompt {
+            position: absolute;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px 20px;
+            background: rgba(0, 0, 0, 0.75);
+            border: 1px solid #00aaff;
+            border-radius: 8px;
+            color: #00aaff;
+            font-size: 16px;
+            font-weight: bold;
+            display: none;
+            pointer-events: none;
+        }
+        
+        .key-collected {
+            color: #ffd700;
+            font-weight: bold;
+        }
+        
+        /* 开始屏幕 */
+        #start-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #1a0a0a 0%, #0a0a0a 100%);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #fff;
+            pointer-events: auto;
+            z-index: 100;
+        }
+        
+        #start-screen h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            color: #ff0000;
+            text-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        #start-screen p {
+            font-size: 18px;
+            margin-bottom: 30px;
+            max-width: 600px;
+            text-align: center;
+            line-height: 1.6;
+            color: #ccc;
+        }
+        
+        #start-button {
+            padding: 15px 40px;
+            font-size: 20px;
+            background: #ff0000;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+            pointer-events: auto;
+        }
+        
+        #start-button:hover {
+            background: #cc0000;
+            transform: scale(1.05);
+        }
+        
+        .controls-info {
+            margin-top: 30px;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            max-width: 500px;
+        }
+        
+        .controls-info h3 {
+            margin-bottom: 15px;
+            color: #ff0000;
+        }
+        
+        .control-item {
+            margin: 8px 0;
+            display: flex;
+            align-items: center;
+        }
+        
+        .key {
+            display: inline-block;
+            padding: 5px 10px;
+            background: #333;
+            border-radius: 3px;
+            margin-right: 10px;
+            min-width: 60px;
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        /* 游戏结束屏幕 */
+        #game-over-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #fff;
+            pointer-events: auto;
+            z-index: 100;
+        }
+        
+        #game-over-screen h2 {
+            font-size: 64px;
+            margin-bottom: 20px;
+            color: #ff0000;
+        }
+        
+        #game-over-screen.victory h2 {
+            color: #ffd700;
+        }
+        
+        #restart-button {
+            padding: 15px 40px;
+            font-size: 20px;
+            background: #ff0000;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        
+        /* 惊吓效果 */
+        #jump-scare {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, transparent 0%, rgba(255,0,0,0.8) 100%);
+            display: none;
+            pointer-events: none;
+            z-index: 50;
+        }
+        
+        .damage-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 0, 0, 0.3);
+            animation: flash 0.2s ease-out;
+            pointer-events: none;
+        }
+        
+        @keyframes flash {
+            0% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+        
+        /* 躲藏提示 */
+        #hide-prompt {
+            position: absolute;
+            bottom: 120px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 24px;
+            background: rgba(0, 0, 0, 0.75);
+            border: 1px solid #ffcc00;
+            border-radius: 8px;
+            color: #ffcc00;
+            font-size: 18px;
+            font-weight: bold;
+            text-shadow: 0 0 8px rgba(255, 204, 0, 0.5);
+            display: none;
+            pointer-events: none;
+            animation: hidePromptPulse 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes hidePromptPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        
+        /* 躲藏中指示器 */
+        #hiding-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 15px 30px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 2px solid #888;
+            border-radius: 10px;
+            color: #aaa;
+            font-size: 20px;
+            display: none;
+            pointer-events: none;
+            text-align: center;
+        }
+        
+        #hiding-indicator .hint {
+            font-size: 14px;
+            color: #666;
+            margin-top: 8px;
+        }
+        
+        /* === 恐怖氛围后处理效果 === */
+        
+        /* 四角泛红暗角 */
+        #vignette-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+            background: radial-gradient(ellipse at center, 
+                transparent 40%, 
+                rgba(80, 0, 0, 0.3) 70%, 
+                rgba(40, 0, 0, 0.7) 90%, 
+                rgba(20, 0, 0, 0.95) 100%
+            );
+            transition: opacity 0.5s;
+        }
+        
+        /* 受伤时加深的红色暗角 */
+        #vignette-overlay.damage-pulse {
+            background: radial-gradient(ellipse at center, 
+                transparent 20%, 
+                rgba(150, 0, 0, 0.4) 50%, 
+                rgba(100, 0, 0, 0.7) 75%, 
+                rgba(50, 0, 0, 1.0) 100%
+            );
+        }
+        
+        /* 灰色/低血量滤镜 */
+        #desaturation-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 9;
+            background: rgba(0, 0, 0, 0);
+            mix-blend-mode: saturation;
+            transition: background 0.8s;
+        }
+        
+        /* 画面抖动容器 */
+        #game-container.shaking {
+            animation: screenShake 0.1s infinite;
+        }
+        
+        @keyframes screenShake {
+            0%   { transform: translate(0, 0); }
+            25%  { transform: translate(-2px, 1px); }
+            50%  { transform: translate(1px, -2px); }
+            75%  { transform: translate(-1px, 2px); }
+            100% { transform: translate(2px, -1px); }
+        }
+        
+        /* 强烈抖动（受伤时） */
+        #game-container.heavy-shake {
+            animation: heavyShake 0.08s infinite;
+        }
+        
+        @keyframes heavyShake {
+            0%   { transform: translate(0, 0); }
+            20%  { transform: translate(-4px, 3px); }
+            40%  { transform: translate(3px, -4px); }
+            60%  { transform: translate(-3px, -2px); }
+            80%  { transform: translate(4px, 2px); }
+            100% { transform: translate(-2px, -3px); }
+        }
+        
+        /* 心跳节奏抖动用JS控制class，不再用CSS animation */
+
+        /* === 手机触控UI === */
+        #mobile-controls {
+            display: none;
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 20;
+        }
+        .mobile-active #mobile-controls { display: block; }
+
+        /* 虚拟摇杆 — 左下角（移动） */
+        #joystick-zone {
+            position: absolute;
+            left: 16px; bottom: 16px;
+            width: 120px; height: 120px;
+            pointer-events: auto;
+            touch-action: none;
+        }
+        #joystick-base {
+            position: absolute;
+            width: 100px; height: 100px;
+            left: 10px; top: 10px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.06);
+            border: 1.5px solid rgba(255,255,255,0.15);
+        }
+        #joystick-thumb {
+            position: absolute;
+            width: 38px; height: 38px;
+            left: 41px; top: 41px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.18);
+            border: 1.5px solid rgba(255,255,255,0.3);
+            transition: background 0.1s, border-color 0.1s, box-shadow 0.1s;
+        }
+        #joystick-thumb.active {
+            background: rgba(255,255,255,0.4);
+            border-color: rgba(255,255,255,0.6);
+            box-shadow: 0 0 12px rgba(255,255,255,0.3);
+        }
+
+        /* 右下角电筒方向摇杆 — 只控制人物朝向 */
+        #aim-joystick-zone {
+            position: absolute;
+            right: 16px; bottom: 16px;
+            width: 120px; height: 120px;
+            pointer-events: auto;
+            touch-action: none;
+            z-index: 21;
+        }
+        #aim-joystick-base {
+            position: absolute;
+            width: 100px; height: 100px;
+            left: 10px; top: 10px;
+            border-radius: 50%;
+            background: rgba(255,200,50,0.06);
+            border: 1.5px solid rgba(255,200,50,0.18);
+        }
+        #aim-joystick-thumb {
+            position: absolute;
+            width: 38px; height: 38px;
+            left: 41px; top: 41px;
+            border-radius: 50%;
+            background: rgba(255,200,50,0.2);
+            border: 1.5px solid rgba(255,200,50,0.35);
+            transition: background 0.1s, border-color 0.1s, box-shadow 0.1s;
+        }
+        #aim-joystick-thumb.active {
+            background: rgba(255,200,50,0.5);
+            border-color: rgba(255,200,50,0.7);
+            box-shadow: 0 0 12px rgba(255,200,50,0.4);
+        }
+
+        /* 动作按钮 — 横屏分散布局 */
+        .mobile-btn {
+            position: absolute;
+            width: 44px; height: 44px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            pointer-events: auto;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+            border: 1.5px solid rgba(255,255,255,0.2);
+            color: rgba(255,255,255,0.6);
+            font-weight: bold;
+            transition: background 0.1s, border-color 0.1s, box-shadow 0.1s, color 0.1s;
+        }
+        .mobile-btn.pressed {
+            color: #fff;
+            box-shadow: 0 0 10px rgba(255,255,255,0.25);
+        }
+        /* 攻击 — 右上区域 */
+        #btn-attack {
+            right: 16px; bottom: 170px;
+            background: rgba(255, 50, 50, 0.2);
+            border-color: rgba(255, 80, 80, 0.3);
+        }
+        #btn-attack.pressed {
+            background: rgba(255, 50, 50, 0.5);
+            border-color: rgba(255, 80, 80, 0.7);
+        }
+        /* 跑步 — 左摇杆右侧 */
+        #btn-run {
+            left: 148px; bottom: 20px;
+            background: rgba(255, 165, 0, 0.15);
+            border-color: rgba(255, 165, 0, 0.25);
+        }
+        #btn-run.pressed {
+            background: rgba(255, 165, 0, 0.45);
+            border-color: rgba(255, 165, 0, 0.6);
+        }
+        /* 躲藏 — 左摇杆右上 */
+        #btn-hide {
+            left: 148px; bottom: 72px;
+            background: rgba(0, 200, 255, 0.12);
+            border-color: rgba(0, 200, 255, 0.25);
+        }
+        #btn-hide.pressed {
+            background: rgba(0, 200, 255, 0.4);
+            border-color: rgba(0, 200, 255, 0.6);
+        }
+        /* 手电筒 — 右上攻击上方 */
+        #btn-flashlight {
+            right: 16px; bottom: 224px;
+            background: rgba(255, 255, 100, 0.12);
+            border-color: rgba(255, 255, 100, 0.25);
+        }
+        #btn-flashlight.pressed {
+            background: rgba(255, 255, 100, 0.4);
+            border-color: rgba(255, 255, 100, 0.6);
+        }
+        /* 跳跃 — 右上攻击左侧 */
+        #btn-jump {
+            right: 68px; bottom: 170px;
+            background: rgba(100, 255, 100, 0.12);
+            border-color: rgba(100, 255, 100, 0.25);
+        }
+        #btn-jump.pressed {
+            background: rgba(100, 255, 100, 0.4);
+            border-color: rgba(100, 255, 100, 0.6);
+        }
+
+        /* === 联机大厅样式 === */
+        #lobby-screen, #room-screen {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: linear-gradient(135deg, #1a0a0a 0%, #0a0a0a 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            pointer-events: auto;
+        }
+        #room-screen { display: none; }
+        .lobby-box, .room-box {
+            text-align: center;
+            color: #fff;
+            padding: 30px;
+            max-width: 400px;
+            width: 90%;
+        }
+        .lobby-box h1 {
+            font-size: 36px;
+            color: #ff0000;
+            text-shadow: 0 0 20px rgba(255,0,0,0.5);
+            margin-bottom: 8px;
+        }
+        .lobby-sub {
+            color: #888;
+            font-size: 14px;
+            margin-bottom: 24px;
+        }
+        .lobby-section {
+            margin-bottom: 14px;
+        }
+        .lobby-section input {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 16px;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.08);
+            color: #fff;
+            outline: none;
+        }
+        .lobby-section input:focus {
+            border-color: rgba(255,80,80,0.6);
+        }
+        .lobby-divider {
+            color: #555;
+            margin: 16px 0;
+            font-size: 13px;
+        }
+        .join-row {
+            display: flex;
+            gap: 8px;
+        }
+        .join-row input {
+            flex: 1;
+        }
+        .lobby-btn {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        .lobby-btn.create {
+            background: #cc0000;
+            color: #fff;
+            width: 100%;
+        }
+        .lobby-btn.create:hover { background: #aa0000; }
+        .lobby-btn.join {
+            background: rgba(255,255,255,0.15);
+            color: #fff;
+            white-space: nowrap;
+        }
+        .lobby-btn.join:hover { background: rgba(255,255,255,0.25); }
+        .lobby-btn.share {
+            background: #07c160;
+            color: #fff;
+        }
+        .lobby-btn.share:hover { background: #06ad56; }
+        .lobby-btn.leave {
+            background: transparent;
+            color: #888;
+            margin-top: 16px;
+            font-size: 13px;
+        }
+        .lobby-btn.leave:hover { color: #ccc; }
+        .lobby-btn.solo {
+            background: rgba(255,255,255,0.1);
+            color: #ccc;
+            width: 100%;
+        }
+        .lobby-btn.solo:hover { background: rgba(255,255,255,0.2); }
+        .lobby-status {
+            color: #ff6666;
+            font-size: 13px;
+            margin-top: 10px;
+            min-height: 20px;
+        }
+        .room-box h2 {
+            font-size: 22px;
+            color: #ffd700;
+            margin-bottom: 16px;
+        }
+        #room-players {
+            margin: 16px 0;
+        }
+        .player-slot {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 16px;
+            margin-bottom: 6px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 8px;
+            border-left: 3px solid #555;
+            font-size: 15px;
+        }
+        .player-slot.host { border-left-color: #ffd700; }
+        .player-slot.me { border-left-color: #00ccff; }
+        .player-slot .tag {
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: auto;
+        }
+        .player-slot.host .tag { background: rgba(255,215,0,0.2); color: #ffd700; }
+        .player-slot.me .tag { background: rgba(0,200,255,0.15); color: #00ccff; }
+        .room-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+        }
+        .room-actions .lobby-btn { flex: 1; }
+
+        /* 手机端HUD适配 + 竖屏强制横屏 */
+        @media (max-width: 768px) {
+            #game-info { font-size: 12px; top: 8px; left: 8px; }
+            .info-item { padding: 4px 8px; margin-bottom: 4px; }
+            #health-bar-container { width: 180px; height: 16px; top: 8px; }
+            #health-text { font-size: 10px; }
+            #poison-indicator { top: 30px; font-size: 12px; padding: 4px 12px; }
+            #hide-prompt { bottom: 200px; font-size: 14px; }
+            #vault-prompt { bottom: 200px; font-size: 14px; }
+            #hiding-indicator { font-size: 16px; padding: 10px 20px; }
+            #hiding-indicator .hint { font-size: 11px; }
+            #start-screen h1 { font-size: 28px; }
+            #start-screen p { font-size: 14px; padding: 0 20px; }
+            .controls-info { display: none; }
+            #start-button { padding: 12px 30px; font-size: 18px; }
+            #game-over-screen h2 { font-size: 36px; }
+            #restart-button { padding: 12px 30px; font-size: 18px; }
+            /* 大厅横屏布局 */
+            .lobby-box, .room-box {
+                max-width: 500px;
+                width: 80%;
+                padding: 16px 24px;
+            }
+            .lobby-box h1 { font-size: 24px; }
+            .lobby-sub { font-size: 12px; margin-bottom: 12px; }
+            .lobby-section { margin-bottom: 8px; }
+            .lobby-section input { padding: 8px 12px; font-size: 14px; }
+            .lobby-btn { padding: 8px 18px; font-size: 14px; }
+            .lobby-divider { margin: 8px 0; font-size: 11px; }
+            .player-slot { padding: 6px 12px; font-size: 13px; }
+            .room-box h2 { font-size: 18px; }
+            .room-actions { gap: 8px; margin-top: 8px; }
+        }
+        /* 竖屏时CSS强制旋转为横屏 */
+        @media (max-width: 768px) and (orientation: portrait) {
+            body { overflow: hidden; }
+            #game-container {
+                position: fixed;
+                width: 100vh;
+                height: 100vw;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%) rotate(90deg);
+                transform-origin: center center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+        
+        <div id="ui-overlay">
+            <div id="game-info">
+                <div class="info-item">
+                    🔑 钥匙：<span id="key-count" class="key-collected">0 / 3</span>
+                </div>
+                <div class="info-item">
+                    👻 僵尸：<span id="zombie-count">0</span>
+                </div>
+                <div class="info-item">
+                    💀 幽灵：<span id="ghost-count">0</span>
+                </div>
+                <div class="info-item">
+                    🔦 电量：<span id="battery-level">100%</span>
+                </div>
+            </div>
+        </div>
+        
+        <div id="start-screen">
+            <h1>🏫 逃离恐怖教学楼</h1>
+            <p>
+                你被困在一座破旧的教学楼里，黑暗中潜伏着恐怖的怪物。<br>
+                找到 3 把钥匙，打开大门逃出生天！<br>
+                小心僵尸和幽灵，用手电筒照亮你的路...
+            </p>
+            
+            <button id="start-button">开始游戏</button>
+            
+            <div class="controls-info">
+                <h3>🎮 操作说明</h3>
+                <div class="control-item">
+                    <span class="key">WASD</span>
+                    <span>或 <span class="key">方向键</span></span>
+                    <span>移动玩家</span>
+                </div>
+                <div class="control-item">
+                    <span class="key">鼠标</span>
+                    <span>控制手电筒方向</span>
+                </div>
+                <div class="control-item">
+                    <span class="key">F</span>
+                    <span>开关手电筒</span>
+                </div>
+                <div class="control-item">
+                    <span class="key">V</span>
+                    <span>加速跑（消耗电量，产生噪音）</span>
+                </div>
+                <div class="control-item">
+                    <span class="key">鼠标左键</span>
+                    <span>近战攻击</span>
+                </div>
+                <div class="control-item">
+                    <span class="key">空格</span>
+                    <span>跳跃 / 翻越矮障碍</span>
+                </div>
+                <div class="control-item">
+                    <span class="key">E</span>
+                    <span>躲进/离开柜子</span>
+                </div>
+            </div>
+        </div>
+        
+        <div id="game-over-screen">
+            <h2 id="game-over-title">游戏结束</h2>
+            <p id="game-over-message"></p>
+            <button id="restart-button">重新开始</button>
+        </div>
+        
+        <div id="jump-scare"></div>
+        
+        <!-- 恐怖氛围后处理 -->
+        <div id="vignette-overlay"></div>
+        <div id="desaturation-overlay"></div>
+        
+        <!-- 玩家血条 -->
+        <div id="health-bar-container">
+            <div id="health-bar"></div>
+            <div id="health-text">100 / 100</div>
+        </div>
+        
+        <!-- 毒液伤害提示 -->
+        <div id="poison-indicator">☠ 中毒中...</div>
+        
+        <!-- 翻越提示 -->
+        <div id="vault-prompt">按 空格 翻越</div>
+        
+        <div id="hide-prompt"> 按 E 躲进柜子 </div>
+        <div id="hiding-indicator">
+            🫣 躲藏中...
+            <div class="hint">按 E 离开</div>
+        </div>
+
+        <!-- 手机触控UI -->
+        <div id="mobile-controls">
+            <!-- 左侧移动摇杆 -->
+            <div id="joystick-zone">
+                <div id="joystick-base"></div>
+                <div id="joystick-thumb"></div>
+            </div>
+            <!-- 右侧电筒方向摇杆 -->
+            <div id="aim-joystick-zone">
+                <div id="aim-joystick-base"></div>
+                <div id="aim-joystick-thumb"></div>
+            </div>
+            <!-- 动作按钮 -->
+            <div id="btn-attack" class="mobile-btn">⚔</div>
+            <div id="btn-run" class="mobile-btn">🏃</div>
+            <div id="btn-hide" class="mobile-btn">🫣</div>
+            <div id="btn-flashlight" class="mobile-btn">🔦</div>
+            <div id="btn-jump" class="mobile-btn">⬆</div>
+        </div>
+
+        <!-- 联机大厅 -->
+        <div id="lobby-screen">
+            <div class="lobby-box">
+                <h1>🏫 逃离恐怖教学楼</h1>
+                <p class="lobby-sub">多人联机恐怖逃生</p>
+                <div class="lobby-section">
+                    <input id="player-name" type="text" placeholder="输入你的昵称" maxlength="10" />
+                </div>
+                <div class="lobby-section">
+                    <button id="btn-create-room" class="lobby-btn create">🏠 创建房间</button>
+                </div>
+                <div class="lobby-divider">— 或者 —</div>
+                <div class="lobby-section join-row">
+                    <input id="room-id-input" type="text" placeholder="输入房间号" maxlength="6" />
+                    <button id="btn-join-room" class="lobby-btn join">🚪 加入</button>
+                </div>
+                <div class="lobby-divider">— 或者 —</div>
+                <div class="lobby-section">
+                    <button id="btn-solo-play" class="lobby-btn solo">🎮 单人游戏</button>
+                </div>
+                <div id="lobby-status" class="lobby-status"></div>
+            </div>
+        </div>
+
+        <!-- 房间等待界面 -->
+        <div id="room-screen" style="display:none;">
+            <div class="room-box">
+                <h2>🎮 房间 <span id="room-id-display"></span></h2>
+                <div id="room-players"></div>
+                <div class="room-actions">
+                    <button id="btn-share-room" class="lobby-btn share">📤 分享给好友</button>
+                    <button id="btn-start-game" class="lobby-btn create">▶ 开始游戏</button>
+                </div>
+                <button id="btn-leave-room" class="lobby-btn leave">离开房间</button>
+                <div id="room-status" class="lobby-status"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Three.js -->
+    <script src="three.min.js"></script>
+    <!-- PeerJS for multiplayer -->
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    
+    <!-- 游戏主脚本 -->
+    <script src="game.js"></script>
+    <!-- 联机脚本 -->
+    <script src="multiplayer.js"></script>
+</body>
+</html>

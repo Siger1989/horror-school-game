@@ -1,0 +1,16 @@
+{
+  "name": "horror-school-game",
+  "version": "1.0.0",
+  "description": "3D Horror Escape Game",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "set ELECTRON_MIRROR=https://cdn.npmmirror.com/binaries/electron/ && set ELECTRON_BUILDER_BINARIES_MIRROR=https://cdn.npmmirror.com/binaries/electron-builder-binaries/ && electron-builder --win portable --config electron-builder.json"
+  },
+  "author": "Game Developer",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  }
+}
