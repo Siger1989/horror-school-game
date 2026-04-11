@@ -355,6 +355,21 @@ function applyLoadedPlayerModel(gltf) {
         }
     });
     
+    // 调试：检查关键骨骼是否找到
+    const keyBones = ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head',
+        'LeftUpLeg', 'RightUpLeg', 'LeftLeg', 'RightLeg',
+        'LeftArm', 'RightArm', 'LeftForeArm', 'RightForeArm',
+        'LeftShoulder', 'RightShoulder'];
+    const foundBones = keyBones.filter(b => bones[b]);
+    const missingBones = keyBones.filter(b => !bones[b]);
+    console.log('[GLB Player] Bones found:', foundBones.length, '/', keyBones.length);
+    if (missingBones.length > 0) {
+        console.warn('[GLB Player] MISSING bones:', missingBones.join(', '));
+        // 列出所有可用骨骼名
+        const allBoneNames = Object.keys(bones);
+        console.log('[GLB Player] Available bones:', allBoneNames.join(', '));
+    }
+    
     const origRot = {};
     Object.keys(bones).forEach(name => {
         origRot[name] = {
