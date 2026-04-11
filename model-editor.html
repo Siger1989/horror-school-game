@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>人物模型编辑器</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#1a1a2e;color:#e0e0e0;font-family:'Segoe UI',sans-serif;overflow:hidden;height:100vh;display:flex}
+#preview{flex:1;position:relative;background:linear-gradient(180deg,#0d0d1a 0%,#1a1a2e 100%)}
+#preview canvas{width:100%;height:100%;display:block}
+#info{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.6);padding:6px 12px;border-radius:6px;font-size:12px;pointer-events:none}
+#pose-label{position:absolute;top:10px;right:10px;background:rgba(0,180,100,.7);padding:5px 14px;border-radius:6px;font-size:13px;font-weight:bold}
+#view-btns{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:6px;z-index:5}
+#view-btns button{padding:4px 12px;background:rgba(15,52,96,.85);border:1px solid #1a5276;border-radius:5px;color:#e0e0e0;font-size:11px;cursor:pointer;backdrop-filter:blur(4px)}
+#view-btns button:hover{background:#1a5276;border-color:#00b894}
+#view-btns button.on{background:rgba(0,184,148,.7);color:#1a1a2e;border-color:#00b894}
+#bone-toggle{position:absolute;bottom:12px;right:12px;z-index:5}
+#bone-toggle button{padding:4px 12px;background:rgba(15,52,96,.85);border:1px solid #1a5276;border-radius:5px;color:#e0e0e0;font-size:11px;cursor:pointer;backdrop-filter:blur(4px)}
+#bone-toggle button:hover{background:#1a5276}
+#bone-toggle button.on{background:rgba(243,156,18,.7);color:#1a1a2e;border-color:#f39c12}
+#panel{width:360px;background:#16213e;display:flex;flex-direction:column;overflow:hidden;border-left:2px solid #0f3460}
+#panel h2{padding:10px 14px;background:#0f3460;font-size:14px;letter-spacing:1px}
+.sec{padding:8px 14px;border-top:1px solid #0f3460}
+.sec h3{font-size:12px;margin-bottom:6px;color:#aaa}
+#sliders{overflow-y:auto;flex:1;padding:8px 14px}
+.sr{display:flex;align-items:center;margin-bottom:4px;gap:6px}
+.sr label{width:72px;font-size:11px;text-align:right;flex-shrink:0}
+.sr input[type=range]{flex:1;height:3px;accent-color:#00b894}
+.sr .v{width:44px;font-size:10px;text-align:center;font-family:monospace;color:#00b894}
+.pg{display:flex;flex-wrap:wrap;gap:5px}
+.pb{padding:4px 10px;background:#0f3460;border:1px solid #1a5276;border-radius:5px;color:#e0e0e0;font-size:11px;cursor:pointer;transition:.15s}
+.pb:hover{background:#1a5276;border-color:#00b894}
+.pb.on{background:#00b894;color:#1a1a2e;border-color:#00b894}
+#tc{display:flex;gap:5px;margin-bottom:6px;align-items:center;flex-wrap:wrap}
+#tc button{padding:3px 10px;background:#0f3460;border:1px solid #1a5276;border-radius:5px;color:#e0e0e0;font-size:11px;cursor:pointer}
+#tc button:hover{background:#1a5276}
+#tc button.playing{background:#e74c3c;border-color:#e74c3c}
+#tc span{font-size:11px;color:#aaa}
+#track{position:relative;height:44px;background:#0a0a1a;border-radius:5px;cursor:pointer;overflow:hidden}
+.kf{position:absolute;top:50%;width:12px;height:12px;background:#00b894;border:2px solid #fff;border-radius:50%;transform:translate(-50%,-50%);cursor:grab;z-index:2}
+.kf.sel{background:#f39c12;border-color:#f39c12}
+#ph{position:absolute;top:0;width:2px;height:100%;background:#e74c3c;z-index:3;pointer-events:none}
+#eb{display:flex;gap:5px;margin-bottom:5px}
+#eb button{padding:4px 12px;background:#0f3460;border:1px solid #1a5276;border-radius:5px;color:#e0e0e0;font-size:11px;cursor:pointer}
+#eb button:hover{background:#1a5276}
+#co{width:100%;height:70px;background:#0a0a1a;border:1px solid #0f3460;border-radius:5px;color:#00b894;font-family:monospace;font-size:10px;padding:5px;resize:vertical}
+</style>
+</head>
+<body>
+<div id="preview">
+  <div id="info">左键旋转 / 滚轮缩放 / 右键平移</div>
+  <div id="pose-label">站立</div>
+  <div id="view-btns">
+    <button data-v="front" class="on">正面</button>
+    <button data-v="side">侧面</button>
+    <button data-v="back">背面</button>
+    <button data-v="top">俯视</button>
+    <button data-v="3q">3/4</button>
+  </div>
+  <div id="bone-toggle"><button id="btn-bone">🦴 骨骼轴</button></div>
+</div>
+<div id="panel">
+<h2>🦴 骨骼控制</h2>
+<div id="sliders"></div>
+<div class="sec"><h3>📋 预设姿势</h3><div class="pg" id="pgrid"></div></div>
+<div class="sec"><h3>🎬 关键帧动画</h3>
+<div id="tc"><button id="bplay">▶ 播放</button><button id="bstop">■ 停止</button><button id="badd">+ 关键帧</button><button id="bdel">✕ 删除</button><span id="kfinfo">0 帧</span></div>
+<div id="track"><div id="ph"></div></div></div>
+<div class="sec"><h3>📤 导出</h3>
+<div id="eb"><button id="bexp">导出姿势</button><button id="bexpa">导出动画</button><button id="bcopy">复制</button></div>
+<textarea id="co" readonly></textarea></div>
+</div>
+
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import*as THREE from'three';
+import{OrbitControls}from'three/addons/controls/OrbitControls.js';
+
+/* ===== 骨骼定义 ===== */
+const B=[
+  {k:'leftLeg',l:'左腿X',a:-1.5,b:1.5},{k:'leftLegZ',l:'左腿Z',a:-.5,b:.5},
+  {k:'rightLeg',l:'右腿X',a:-1.5,b:1.5},{k:'rightLegZ',l:'右腿Z',a:-.5,b:.5},
+  {k:'leftArm',l:'左臂X',a:-2,b:2},{k:'leftArmZ',l:'左臂Z',a:-1,b:1},
+  {k:'rightArm',l:'右臂X',a:-2,b:2},{k:'rightArmZ',l:'右臂Z',a:-1,b:1},
+  {k:'bodyX',l:'身体X',a:-.5,b:.5},{k:'bodyZ',l:'身体Z',a:-.3,b:.3},{k:'bodyY',l:'身体Y偏',a:-.3,b:.3},
+  {k:'headX',l:'头X',a:-.5,b:.5},{k:'headY',l:'头Y',a:-.5,b:.5}
+];
+
+/* ===== 预设 ===== */
+const P={
+'站立':{leftLeg:0,leftLegZ:0,rightLeg:0,rightLegZ:0,leftArm:0,leftArmZ:0,rightArm:0,rightArmZ:0,bodyX:0,bodyZ:0,bodyY:0,headX:0,headY:0},
+'走路A':{leftLeg:.5,leftLegZ:0,rightLeg:-.5,rightLegZ:0,leftArm:-.3,leftArmZ:0,rightArm:.3,rightArmZ:0,bodyX:0,bodyZ:0,bodyY:.03,headX:0,headY:0},
+'走路B':{leftLeg:-.5,leftLegZ:0,rightLeg:.5,rightLegZ:0,leftArm:.3,leftArmZ:0,rightArm:-.3,rightArmZ:0,bodyX:0,bodyZ:0,bodyY:0,headX:0,headY:0},
+'跑步A':{leftLeg:.8,leftLegZ:0,rightLeg:-.7,rightLegZ:0,leftArm:-.6,leftArmZ:.2,rightArm:.5,rightArmZ:-.2,bodyX:-.15,bodyZ:0,bodyY:.05,headX:-.1,headY:0},
+'跑步B':{leftLeg:-.7,leftLegZ:0,rightLeg:.8,rightLegZ:0,leftArm:.5,leftArmZ:-.2,rightArm:-.6,rightArmZ:.2,bodyX:-.15,bodyZ:0,bodyY:0,headX:-.1,headY:0},
+'攻击':{leftLeg:.2,leftLegZ:0,rightLeg:-.3,rightLegZ:0,leftArm:.3,leftArmZ:.3,rightArm:-1.5,rightArmZ:-.8,bodyX:-.1,bodyZ:.05,bodyY:0,headX:-.15,headY:-.1},
+'受伤':{leftLeg:.2,leftLegZ:0,rightLeg:.1,rightLegZ:0,leftArm:.4,leftArmZ:.2,rightArm:.3,rightArmZ:-.2,bodyX:.2,bodyZ:.1,bodyY:-.1,headX:.3,headY:.1},
+'躲藏':{leftLeg:-.8,leftLegZ:0,rightLeg:-.6,rightLegZ:0,leftArm:-.5,leftArmZ:.3,rightArm:-.4,rightArmZ:-.3,bodyX:.4,bodyZ:0,bodyY:-.25,headX:.3,headY:0},
+};
+
+/* ===== 全局状态 ===== */
+let scene,cam,ren,ctrl,pg,pts={};
+let cp={...P['站立']},cn='站立';
+let kfs=[],playing=false,pt=0,ad=2,sk=-1,dk=-1;
+let boneHelpers=[],showBones=false;
+let camAnim=null; // 相机动画
+
+/* ===== 视角预设 ===== */
+const VIEWS={
+  front:{pos:new THREE.Vector3(0,1.2,4),target:new THREE.Vector3(0,1.1,0)},
+  side:{pos:new THREE.Vector3(4,1.2,0),target:new THREE.Vector3(0,1.1,0)},
+  back:{pos:new THREE.Vector3(0,1.2,-4),target:new THREE.Vector3(0,1.1,0)},
+  top:{pos:new THREE.Vector3(0,5,.5),target:new THREE.Vector3(0,1.1,0)},
+  '3q':{pos:new THREE.Vector3(2.5,2,3),target:new THREE.Vector3(0,1.1,0)},
+};
+
+/* ===== 初始化 ===== */
+function init(){
+  const c=document.getElementById('preview');
+  scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x0d0d1a);
+  scene.fog=new THREE.Fog(0x0d0d1a,12,35);
+
+  cam=new THREE.PerspectiveCamera(45,c.clientWidth/c.clientHeight,.1,100);
+  cam.position.set(2.5,2,3);
+
+  ren=new THREE.WebGLRenderer({antialias:true,alpha:false});
+  ren.setSize(c.clientWidth,c.clientHeight);
+  ren.setPixelRatio(Math.min(devicePixelRatio,2));
+  ren.shadowMap.enabled=true;
+  ren.shadowMap.type=THREE.PCFSoftShadowMap;
+  ren.toneMapping=THREE.ACESFilmicToneMapping;
+  ren.toneMappingExposure=1.1;
+  c.appendChild(ren.domElement);
+
+  ctrl=new OrbitControls(cam,ren.domElement);
+  ctrl.target.set(0,1.1,0);
+  ctrl.enableDamping=true;
+  ctrl.dampingFactor=.08;
+  ctrl.minDistance=1;
+  ctrl.maxDistance=12;
+  ctrl.maxPolarAngle=Math.PI*.85;
+  ctrl.update();
+
+  // 灯光 - 三点布光
+  scene.add(new THREE.AmbientLight(0x303050,.6));
+  // 主光（右上方，暖白）
+  const key=new THREE.DirectionalLight(0xfff0dd,1.5);
+  key.position.set(3,6,4);key.castShadow=true;
+  key.shadow.mapSize.set(2048,2048);
+  key.shadow.camera.near=.5;key.shadow.camera.far=20;
+  key.shadow.camera.left=-3;key.shadow.camera.right=3;
+  key.shadow.camera.top=4;key.shadow.camera.bottom=-1;
+  key.shadow.bias=-.001;key.shadow.normalBias=.02;
+  scene.add(key);
+  // 补光（左方，冷蓝）
+  const fill=new THREE.DirectionalLight(0x8888cc,.5);
+  fill.position.set(-4,3,2);scene.add(fill);
+  // 轮廓光（后方，微蓝）
+  const rim=new THREE.DirectionalLight(0x6688ff,.4);
+  rim.position.set(0,3,-5);scene.add(rim);
+  // 底部微弱反弹光
+  const bounce=new THREE.DirectionalLight(0x443322,.2);
+  bounce.position.set(0,-2,0);scene.add(bounce);
+
+  // 地面 - 圆形平台
+  const platGeo=new THREE.CylinderGeometry(2.5,2.8,.08,32);
+  const platMat=new THREE.MeshStandardMaterial({color:0x1a1a2e,roughness:.85,metalness:.1});
+  const plat=new THREE.Mesh(platGeo,platMat);
+  plat.position.y=-.04;plat.receiveShadow=true;scene.add(plat);
+  // 平台边缘发光环
+  const ringGeo=new THREE.TorusGeometry(2.65,.02,8,64);
+  const ringMat=new THREE.MeshBasicMaterial({color:0x00b894,transparent:true,opacity:.4});
+  const ring=new THREE.Mesh(ringGeo,ringMat);
+  ring.rotation.x=-Math.PI/2;ring.position.y=0;scene.add(ring);
+  // 网格
+  const grid=new THREE.GridHelper(6,12,0x222244,0x181830);
+  grid.position.y=.001;scene.add(grid);
+
+  mkModel();mkBoneHelpers();mkSliders();mkPresets();mkEvents();mkTimeline();mkViewBtns();
+  applyPose(cp);
+
+  window.addEventListener('resize',()=>{
+    cam.aspect=c.clientWidth/c.clientHeight;
+    cam.updateProjectionMatrix();
+    ren.setSize(c.clientWidth,c.clientHeight);
+  });
+  ani();
+}
+
+/* ===== 创建模型（与game.js一致，1.5倍放大）===== */
+function mkModel(){
+  pg=new THREE.Group();
+  const skM=new THREE.MeshStandardMaterial({color:0xffdbac,roughness:.7});
+  const shM=new THREE.MeshStandardMaterial({color:0x3a6ea5,roughness:.6});
+  const paM=new THREE.MeshStandardMaterial({color:0x2c3e50,roughness:.7});
+  const sh2M=new THREE.MeshStandardMaterial({color:0x1a1a2e,roughness:.8});
+  const haM=new THREE.MeshStandardMaterial({color:0x2c1810,roughness:.9});
+
+  // 左腿
+  const llG=new THREE.Group();llG.position.set(-.18,.8,0);
+  const lG=new THREE.CylinderGeometry(.15,.13,.8,8);
+  const ll=new THREE.Mesh(lG,paM);ll.position.y=-.4;ll.castShadow=true;llG.add(ll);
+  const sG=new THREE.BoxGeometry(.22,.12,.35);
+  const ls=new THREE.Mesh(sG,sh2M);ls.position.set(0,-.74,.06);llG.add(ls);
+  pg.add(llG);
+
+  // 右腿
+  const rlG=new THREE.Group();rlG.position.set(.18,.8,0);
+  const rl=new THREE.Mesh(lG,paM);rl.position.y=-.4;rl.castShadow=true;rlG.add(rl);
+  const rs=new THREE.Mesh(sG,sh2M);rs.position.set(0,-.74,.06);rlG.add(rs);
+  pg.add(rlG);
+
+  // 身体
+  const bG=new THREE.CylinderGeometry(.3,.25,.7,8);
+  const bd=new THREE.Mesh(bG,shM);bd.position.y=1.15;bd.castShadow=true;pg.add(bd);
+
+  // 左臂
+  const laG=new THREE.Group();laG.position.set(-.35,1.4,0);
+  const aG=new THREE.CylinderGeometry(.1,.08,.6,8);
+  const la=new THREE.Mesh(aG,skM);la.position.y=-.3;la.castShadow=true;laG.add(la);pg.add(laG);
+
+  // 右臂
+  const raG=new THREE.Group();raG.position.set(.35,1.4,0);
+  const ra=new THREE.Mesh(aG,skM);ra.position.y=-.3;ra.castShadow=true;raG.add(ra);pg.add(raG);
+
+  // 脖子
+  const nG=new THREE.CylinderGeometry(.1,.12,.15,8);
+  const nk=new THREE.Mesh(nG,skM);nk.position.y=1.55;pg.add(nk);
+
+  // 头
+  const hG=new THREE.SphereGeometry(.25,12,10);
+  const hd=new THREE.Mesh(hG,skM);hd.position.y=1.8;hd.castShadow=true;pg.add(hd);
+
+  // 头发
+  const hrG=new THREE.SphereGeometry(.27,12,6,0,Math.PI*2,0,Math.PI/2);
+  const hr=new THREE.Mesh(hrG,haM);hr.position.y=1.82;pg.add(hr);
+
+  // 眼睛
+  const eG=new THREE.SphereGeometry(.04,6,6);
+  const eM=new THREE.MeshBasicMaterial({color:0x111111});
+  const le=new THREE.Mesh(eG,eM);le.position.set(-.08,1.82,.22);pg.add(le);
+  const re=new THREE.Mesh(eG,eM);re.position.set(.08,1.82,.22);pg.add(re);
+
+  // 手电筒
+  const fG=new THREE.CylinderGeometry(.06,.08,.35,8);
+  const fM=new THREE.MeshStandardMaterial({color:0x444444,metalness:.6,roughness:.3});
+  const fl=new THREE.Mesh(fG,fM);fl.position.set(.48,1,.25);fl.rotation.x=Math.PI/6;pg.add(fl);
+  const fhG=new THREE.CylinderGeometry(.09,.06,.06,8);
+  const fhM=new THREE.MeshStandardMaterial({color:0xffffcc,emissive:0x333300});
+  const fh=new THREE.Mesh(fhG,fhM);fh.position.set(.48,1.2,.35);fh.rotation.x=Math.PI/6;pg.add(fh);
+
+  // 1.5倍放大
+  pg.scale.set(1.5,1.5,1.5);
+
+  pts={leftLeg:llG,rightLeg:rlG,leftArm:laG,rightArm:raG,body:bd,head:hd};
+  scene.add(pg);
+}
+
+/* ===== 骨骼轴心可视化 ===== */
+function mkBoneHelpers(){
+  const axLen=.25;
+  const groups=[pts.leftLeg,pts.rightLeg,pts.leftArm,pts.rightArm];
+  const singles=[pts.body,pts.head];
+  groups.forEach(g=>{
+    const ax=new THREE.AxesHelper(axLen);
+    ax.visible=false;g.add(ax);boneHelpers.push(ax);
+  });
+  // body和head没有Group包裹，在它们位置创建
+  singles.forEach(m=>{
+    const g=new THREE.Group();
+    g.position.copy(m.position);
+    const ax=new THREE.AxesHelper(axLen);
+    ax.visible=false;g.add(ax);pg.add(g);boneHelpers.push(ax);
+  });
+}
+
+function toggleBones(){
+  showBones=!showBones;
+  boneHelpers.forEach(h=>h.visible=showBones);
+  const btn=document.getElementById('btn-bone');
+  btn.classList.toggle('on',showBones);
+  btn.textContent=showBones?'🦴 骨骼轴 ✓':'🦴 骨骼轴';
+}
+
+/* ===== 视角切换 ===== */
+function mkViewBtns(){
+  document.querySelectorAll('#view-btns button').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const v=btn.dataset.v;
+      const view=VIEWS[v];if(!view)return;
+      // 高亮当前按钮
+      document.querySelectorAll('#view-btns button').forEach(b=>b.classList.remove('on'));
+      btn.classList.add('on');
+      // 平滑过渡相机
+      camAnim={
+        startPos:cam.position.clone(),
+        endPos:view.pos.clone(),
+        startTarget:ctrl.target.clone(),
+        endTarget:view.target.clone(),
+        progress:0,
+        duration:.6
+      };
+    });
+  });
+  // 骨骼轴按钮
+  document.getElementById('btn-bone').addEventListener('click',toggleBones);
+}
+
+/* ===== 姿势应用 ===== */
+function applyPose(p){
+  pts.leftLeg.rotation.set(0,0,0);pts.rightLeg.rotation.set(0,0,0);
+  pts.leftArm.rotation.set(0,0,0);pts.rightArm.rotation.set(0,0,0);
+  pts.body.rotation.set(0,0,0);pts.body.position.y=1.15;pts.head.rotation.set(0,0,0);
+  if(p.leftLeg!=null)pts.leftLeg.rotation.x=p.leftLeg;
+  if(p.leftLegZ!=null)pts.leftLeg.rotation.z=p.leftLegZ;
+  if(p.rightLeg!=null)pts.rightLeg.rotation.x=p.rightLeg;
+  if(p.rightLegZ!=null)pts.rightLeg.rotation.z=p.rightLegZ;
+  if(p.leftArm!=null)pts.leftArm.rotation.x=p.leftArm;
+  if(p.leftArmZ!=null)pts.leftArm.rotation.z=p.leftArmZ;
+  if(p.rightArm!=null)pts.rightArm.rotation.x=p.rightArm;
+  if(p.rightArmZ!=null)pts.rightArm.rotation.z=p.rightArmZ;
+  if(p.bodyX!=null)pts.body.rotation.x=p.bodyX;
+  if(p.bodyZ!=null)pts.body.rotation.z=p.bodyZ;
+  if(p.bodyY!=null)pts.body.position.y=1.15+p.bodyY;
+  if(p.headX!=null)pts.head.rotation.x=p.headX;
+  if(p.headY!=null)pts.head.rotation.y=p.headY;
+  updSliders(p);
+}
+
+function updSliders(p){
+  B.forEach(b=>{
+    const s=document.getElementById('s-'+b.k),v=document.getElementById('v-'+b.k);
+    if(s&&p[b.k]!=null){s.value=p[b.k];v.textContent=p[b.k].toFixed(2);}
+  });
+}
+
+/* ===== 滑块UI ===== */
+function mkSliders(){
+  const c=document.getElementById('sliders');
+  B.forEach(b=>{
+    const d=document.createElement('div');d.className='sr';
+    d.innerHTML=`<label>${b.l}</label><input type="range" id="s-${b.k}" min="${b.a}" max="${b.b}" step="0.01" value="0"><span class="v" id="v-${b.k}">0.00</span>`;
+    c.appendChild(d);
+    d.querySelector('input').addEventListener('input',e=>{
+      const val=parseFloat(e.target.value);
+      document.getElementById('v-'+b.k).textContent=val.toFixed(2);
+      cp[b.k]=val;applyPose(cp);cn='自定义';
+      document.getElementById('pose-label').textContent='自定义';hlPreset(null);
+    });
+  });
+}
+
+/* ===== 预设按钮 ===== */
+function mkPresets(){
+  const g=document.getElementById('pgrid');
+  Object.keys(P).forEach(n=>{
+    const b=document.createElement('button');b.className='pb';b.textContent=n;b.dataset.n=n;
+    b.addEventListener('click',()=>{cp={...P[n]};cn=n;applyPose(cp);
+      document.getElementById('pose-label').textContent=n;hlPreset(n);});
+    g.appendChild(b);
+  });
+  hlPreset('站立');
+}
+function hlPreset(n){document.querySelectorAll('.pb').forEach(b=>b.classList.toggle('on',b.dataset.n===n));}
+
+/* ===== 关键帧时间线 ===== */
+function mkTimeline(){
+  const tr=document.getElementById('track');
+
+  function renderKf(){
+    tr.querySelectorAll('.kf').forEach(e=>e.remove());
+    kfs.forEach((kf,i)=>{
+      const d=document.createElement('div');d.className='kf'+(i===sk?' sel':'');
+      d.style.left=(kf.t*100)+'%';d.title=`帧${i}: ${kf.n||'自定义'}`;
+      d.addEventListener('mousedown',e=>{e.stopPropagation();sk=i;dk=i;renderKf();applyPose(kf.p);});
+      tr.appendChild(d);
+    });
+    document.getElementById('kfinfo').textContent=kfs.length+' 帧';
+  }
+
+  tr.addEventListener('click',e=>{
+    if(e.target.classList.contains('kf'))return;
+    const r=tr.getBoundingClientRect(),t=(e.clientX-r.left)/r.width;
+    addKf(Math.max(0,Math.min(1,t)));
+  });
+
+  document.addEventListener('mousemove',e=>{
+    if(dk<0)return;const r=tr.getBoundingClientRect();
+    kfs[dk].t=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
+    kfs.sort((a,b)=>a.t-b.t);sk=dk;renderKf();
+  });
+  document.addEventListener('mouseup',()=>{dk=-1;});
+
+  document.getElementById('bplay').addEventListener('click',()=>{
+    if(kfs.length<2){alert('至少需要2个关键帧');return;}
+    playing=!playing;const b=document.getElementById('bplay');
+    if(playing){b.textContent='⏸ 暂停';b.classList.add('playing');pt=0;}
+    else{b.textContent='▶ 播放';b.classList.remove('playing');}
+  });
+
+  document.getElementById('bstop').addEventListener('click',()=>{
+    playing=false;pt=0;const b=document.getElementById('bplay');
+    b.textContent='▶ 播放';b.classList.remove('playing');
+    if(kfs.length)applyPose(kfs[0].p);updPh(0);
+  });
+
+  document.getElementById('badd').addEventListener('click',()=>{
+    let t=.5;if(kfs.length)t=Math.min(1,kfs[kfs.length-1].t+.2);addKf(t);
+  });
+
+  document.getElementById('bdel').addEventListener('click',()=>{
+    if(sk>=0&&sk<kfs.length){kfs.splice(sk,1);sk=-1;renderKf();}
+  });
+
+  function addKf(t){
+    kfs.push({t,p:{...cp},n:cn});kfs.sort((a,b)=>a.t-b.t);
+    sk=kfs.findIndex(k=>k.t===t);renderKf();
+  }
+
+  function updPh(t){document.getElementById('ph').style.left=(t*100)+'%';}
+
+  window._tl={tick(dt){
+    if(!playing||kfs.length<2)return;
+    pt+=dt/ad;if(pt>=1)pt=0;updPh(pt);
+    let pv=kfs[0],nx=kfs[kfs.length-1];
+    for(let i=0;i<kfs.length-1;i++){if(pt>=kfs[i].t&&pt<=kfs[i+1].t){pv=kfs[i];nx=kfs[i+1];break;}}
+    const rng=nx.t-pv.t,lt=rng>0?(pt-pv.t)/rng:0,st=lt*lt*(3-2*lt);
+    const ip={};B.forEach(b=>{const a=pv.p[b.k]||0,c=nx.p[b.k]||0;ip[b.k]=a+(c-a)*st;});
+    applyPose(ip);
+  },renderKf};
+}
+
+/* ===== 导出事件 ===== */
+function mkEvents(){
+  document.getElementById('bexp').addEventListener('click',()=>{
+    let c=`// 姿势: ${cn}\nconst pose = {\n`;
+    B.forEach((b,i)=>{c+=`  ${b.k}: ${(cp[b.k]||0).toFixed(3)}${i<B.length-1?',':''}  // ${b.l}\n`;});
+    c+=`};\n// 应用:\n`;
+    c+=`parts.leftLeg.rotation.x = pose.leftLeg;\nparts.leftLeg.rotation.z = pose.leftLegZ;\n`;
+    c+=`parts.rightLeg.rotation.x = pose.rightLeg;\nparts.rightLeg.rotation.z = pose.rightLegZ;\n`;
+    c+=`parts.leftArm.rotation.x = pose.leftArm;\nparts.leftArm.rotation.z = pose.leftArmZ;\n`;
+    c+=`parts.rightArm.rotation.x = pose.rightArm;\nparts.rightArm.rotation.z = pose.rightArmZ;\n`;
+    c+=`parts.body.rotation.x = pose.bodyX;\nparts.body.rotation.z = pose.bodyZ;\n`;
+    c+=`parts.body.position.y = 1.15 + pose.bodyY;\n`;
+    c+=`parts.head.rotation.x = pose.headX;\nparts.head.rotation.y = pose.headY;\n`;
+    document.getElementById('co').value=c;
+  });
+
+  document.getElementById('bexpa').addEventListener('click',()=>{
+    if(kfs.length<2){alert('至少2个关键帧');return;}
+    let c=`// 动画: ${kfs.length}关键帧, ${ad}秒循环\n`;
+    c+=`const keyframes = [\n`;
+    kfs.forEach((kf,i)=>{
+      c+=`  {time: ${kf.t.toFixed(3)}, pose: {`;
+      c+=B.map(b=>`${b.k}: ${(kf.p[b.k]||0).toFixed(3)}`).join(', ');
+      c+=`}}${i<kfs.length-1?',':''}\n`;
+    });
+    c+=`];\n\n`;
+    c+=`// 播放逻辑 (每帧调用):\n`;
+    c+=`// animTime += deltaTime / ${ad};\n`;
+    c+=`// if (animTime >= 1) animTime = 0;\n`;
+    c+=`// 找前后关键帧, smoothstep插值\n`;
+    c+=`// smoothstep(t) = t*t*(3-2*t)\n`;
+    document.getElementById('co').value=c;
+  });
+
+  document.getElementById('bcopy').addEventListener('click',()=>{
+    const ta=document.getElementById('co');ta.select();
+    navigator.clipboard.writeText(ta.value).then(()=>{
+      const b=document.getElementById('bcopy'),o=b.textContent;
+      b.textContent='✓ 已复制';setTimeout(()=>b.textContent=o,1000);
+    });
+  });
+}
+
+/* ===== 动画循环 ===== */
+let lastT=0;
+function ani(t=0){
+  requestAnimationFrame(ani);
+  const dt=(t-lastT)/1000;lastT=t;
+  if(dt>0&&dt<.1){
+    // 相机平滑过渡
+    if(camAnim){
+      camAnim.progress+=dt/camAnim.duration;
+      if(camAnim.progress>=1){
+        cam.position.copy(camAnim.endPos);
+        ctrl.target.copy(camAnim.endTarget);
+        camAnim=null;
+      }else{
+        const e=1-Math.pow(1-camAnim.progress,3); // easeOutCubic
+        cam.position.lerpVectors(camAnim.startPos,camAnim.endPos,e);
+        ctrl.target.lerpVectors(camAnim.startTarget,camAnim.endTarget,e);
+      }
+    }
+    ctrl.update();
+    if(window._tl)window._tl.tick(dt);
+  }
+  ren.render(scene,cam);
+}
+
+init();
+</script>
+</body>
+</html>

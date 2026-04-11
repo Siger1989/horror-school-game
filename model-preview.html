@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>AJ 模型预览</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#1a1a2e;color:#e0e0e0;font-family:'Segoe UI',sans-serif;overflow:hidden;height:100vh;display:flex}
+#preview{flex:1;position:relative}
+#preview canvas{width:100%;height:100%;display:block}
+#info{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.8);padding:12px 16px;border-radius:8px;font-size:12px;max-width:400px;max-height:80vh;overflow-y:auto;line-height:1.6}
+#info h3{color:#00b894;margin:8px 0 4px;font-size:13px}
+#info h3:first-child{margin-top:0}
+#info .val{color:#f39c12;font-family:monospace}
+#info .bone{color:#74b9ff;padding-left:12px}
+#loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:18px;color:#00b894}
+</style>
+</head>
+<body>
+<div id="preview">
+  <div id="loading">⏳ 加载模型中...</div>
+  <div id="info" style="display:none"></div>
+</div>
+
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+
+const container = document.getElementById('preview');
+const infoDiv = document.getElementById('info');
+const loadingDiv = document.getElementById('loading');
+
+// 场景
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+scene.fog = new THREE.Fog(0x1a1a2e, 15, 40);
+
+const camera = new THREE.PerspectiveCamera(45, container.clientWidth/container.clientHeight, 0.1, 100);
+camera.position.set(2, 2, 3);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(container.clientWidth, container.clientHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+container.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1;
+controls.maxDistance = 10;
+controls.update();
+
+// 灯光
+scene.add(new THREE.AmbientLight(0x404060, 0.8));
+const keyLight = new THREE.DirectionalLight(0xfff0dd, 1.5);
+keyLight.position.set(3, 6, 4);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.set(2048, 2048);
+scene.add(keyLight);
+const fillLight = new THREE.DirectionalLight(0x8888cc, 0.5);
+fillLight.position.set(-4, 3, 2);
+scene.add(fillLight);
+const rimLight = new THREE.DirectionalLight(0x6688ff, 0.4);
+rimLight.position.set(0, 3, -5);
+scene.add(rimLight);
+
+// 地面
+const grid = new THREE.GridHelper(6, 12, 0x222244, 0x181830);
+scene.add(grid);
+
+// 加载模型
+const loader = new GLTFLoader();
+loader.load('./models/Aj.glb', (gltf) => {
+  loadingDiv.style.display = 'none';
+  
+  const model = gltf.scene;
+  
+  // 自动缩放和居中
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const scale = 2.0 / maxDim; // 让模型大约2单位高
+  model.scale.set(scale, scale, scale);
+  
+  // 居中到地面
+  const scaledBox = new THREE.Box3().setFromObject(model);
+  const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
+  model.position.x -= scaledCenter.x;
+  model.position.z -= scaledCenter.z;
+  model.position.y -= scaledBox.min.y; // 底部对齐地面
+  
+  // 启用阴影
+  model.traverse(child => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+  
+  scene.add(model);
+  
+  // 相机对准模型中心
+  const newBox = new THREE.Box3().setFromObject(model);
+  const newCenter = newBox.getCenter(new THREE.Vector3());
+  controls.target.copy(newCenter);
+  camera.position.set(2, newCenter.y + 0.5, 3);
+  controls.update();
+  
+  // ===== 分析模型结构 =====
+  let html = '';
+  
+  // 1. 基本信息
+  html += `<h3>📦 模型基本信息</h3>`;
+  html += `原始尺寸: <span class="val">${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}</span><br>`;
+  html += `缩放比例: <span class="val">${scale.toFixed(4)}</span><br>`;
+  html += `缩放后高度: <span class="val">${(size.y * scale).toFixed(2)}</span><br>`;
+  
+  // 2. 动画
+  const anims = gltf.animations || [];
+  html += `<h3>🎬 动画 (${anims.length}个)</h3>`;
+  if (anims.length === 0) {
+    html += `<span class="val">无动画数据</span>（纯静态模型）<br>`;
+  } else {
+    anims.forEach((clip, i) => {
+      html += `${i}: <span class="val">${clip.name}</span> (${clip.duration.toFixed(2)}秒, ${clip.tracks.length}轨道)<br>`;
+    });
+  }
+  
+  // 3. 骨骼层级
+  html += `<h3>🦴 骨骼层级</h3>`;
+  let boneCount = 0;
+  let meshCount = 0;
+  let materialNames = new Set();
+  
+  function traverse(obj, depth = 0) {
+    const indent = '  '.repeat(depth);
+    let icon = '🔹';
+    let extra = '';
+    
+    if (obj.isBone) {
+      icon = '🦴';
+      boneCount++;
+      extra = ` <span class="bone">[Bone]</span>`;
+    } else if (obj.isMesh) {
+      icon = '🔲';
+      meshCount++;
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      mats.forEach(m => materialNames.add(m.name || m.uuid.slice(0,8)));
+      extra = ` <span class="val">[${obj.geometry.attributes.position?.count || '?'}顶点]</span>`;
+    } else if (obj.isSkinnedMesh) {
+      icon = '🧑';
+      meshCount++;
+      extra = ` <span class="val">[SkinnedMesh, ${obj.geometry.attributes.position?.count || '?'}顶点]</span>`;
+    }
+    
+    if (depth < 4) { // 只显示前4层，避免太长
+      html += `${indent}${icon} ${obj.name || '(unnamed)'}${extra}<br>`;
+    } else if (depth === 4) {
+      html += `${indent}... (更深层级省略)<br>`;
+    }
+    
+    obj.children.forEach(child => traverse(child, depth + 1));
+  }
+  
+  traverse(model);
+  html += `<br>骨骼数: <span class="val">${boneCount}</span>, 网格数: <span class="val">${meshCount}</span><br>`;
+  
+  // 4. 材质
+  html += `<h3>🎨 材质 (${materialNames.size}个)</h3>`;
+  materialNames.forEach(name => {
+    html += `• <span class="val">${name}</span><br>`;
+  });
+  
+  // 5. 纹理
+  html += `<h3>🖼️ 纹理</h3>`;
+  const textures = new Set();
+  model.traverse(child => {
+    if (child.isMesh) {
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      mats.forEach(m => {
+        Object.keys(m).forEach(key => {
+          if (m[key] && m[key].isTexture) {
+            textures.add(`${m[key].name || key}: ${m[key].image?.width || '?'}×${m[key].image?.height || '?'}`);
+          }
+        });
+      });
+    }
+  });
+  if (textures.size === 0) {
+    html += `<span class="val">无纹理</span><br>`;
+  } else {
+    textures.forEach(t => html += `• ${t}<br>`);
+  }
+  
+  infoDiv.innerHTML = html;
+  infoDiv.style.display = 'block';
+  
+  // 如果有动画，自动播放第一个
+  if (anims.length > 0) {
+    const mixer = new THREE.AnimationMixer(model);
+    const action = mixer.clipAction(anims[0]);
+    action.play();
+    
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = clock.getDelta();
+      mixer.update(dt);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+    console.log('播放动画:', anims[0].name);
+  } else {
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  }
+  
+}, undefined, (err) => {
+  loadingDiv.textContent = '❌ 加载失败: ' + err.message;
+  console.error(err);
+});
+
+// 窗口大小
+window.addEventListener('resize', () => {
+  camera.aspect = container.clientWidth / container.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(container.clientWidth, container.clientHeight);
+});
+</script>
+</body>
+</html>

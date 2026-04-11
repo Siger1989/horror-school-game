@@ -755,6 +755,129 @@ function createLockers() {
 // 创建玩家
 // ============================================
 function createPlayer() {
+    // 手电筒灯光（只创建一次，两种模型共用）
+    createFlashlight();
+    
+    // 尝试加载GLB模型（GLTFLoader已同步加载）
+    if (window.THREE && window.THREE.GLTFLoader) {
+        createGLBPlayer();
+    } else {
+        createPrimitivePlayer();
+    }
+}
+
+// 创建手电筒灯光（只调用一次）
+function createFlashlight() {
+    if (gameState.flashlightLight) return; // 防止重复创建
+    
+    const flashlightLight = new THREE.SpotLight(0xddeeff, 3000, 25, Math.PI / 6, 0.7, 3);
+    flashlightLight.position.set(0.1, 0.3, 0.08);
+    flashlightLight.castShadow = true;
+    flashlightLight.shadow.mapSize.width = 1024;
+    flashlightLight.shadow.mapSize.height = 1024;
+    flashlightLight.shadow.bias = -0.002;
+    flashlightLight.shadow.normalBias = 0.02;
+    scene.add(flashlightLight);
+    
+    const flashlightTarget = new THREE.Object3D();
+    const playerStartX = -GAME_CONFIG.scene.gridWidth * GAME_CONFIG.scene.tileSize / 2 + 8;
+    flashlightTarget.position.set(playerStartX + 10, 0, 0);
+    scene.add(flashlightTarget);
+    flashlightLight.target = flashlightTarget;
+    
+    gameState.flashlightLight = flashlightLight;
+    gameState.flashlightTarget = flashlightTarget;
+    
+    // 玩家附近微弱点光源 — 模拟手电筒反光照亮持筒者+周围
+    // 强度低，衰减快，只照亮1-2米范围，让人物和附近地面稍微可见
+    const playerGlow = new THREE.PointLight(0xccddff, 15, 4, 2);
+    playerGlow.position.set(0, 0.25, 0);
+    scene.add(playerGlow);
+    gameState.playerGlow = playerGlow;
+}
+
+// ===== GLB模型玩家 =====
+function createGLBPlayer() {
+    const loader = new THREE.GLTFLoader();
+    loader.load('./models/Aj.glb', (gltf) => {
+        const model = gltf.scene;
+        
+        // 缩放到约1.8单位高
+        const box = new THREE.Box3().setFromObject(model);
+        const size = box.getSize(new THREE.Vector3());
+        const targetHeight = 0.45;
+        const scale = targetHeight / size.y;
+        model.scale.set(scale, scale, scale);
+        
+        // 底部对齐地面：计算缩放后的Y偏移
+        const scaledBox = new THREE.Box3().setFromObject(model);
+        const groundOffset = -scaledBox.min.y; // 让模型底部在y=0
+        
+        // 启用阴影
+        model.traverse(child => {
+            if (child.isMesh) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+            }
+        });
+        
+        // 找骨骼
+        const bones = {};
+        model.traverse(child => {
+            if (child.isBone) {
+                const name = child.name.replace('mixamorig:', '');
+                bones[name] = child;
+            }
+        });
+        
+        // 记录原始旋转
+        const origRot = {};
+        Object.keys(bones).forEach(name => {
+            origRot[name] = {
+                x: bones[name].rotation.x,
+                y: bones[name].rotation.y,
+                z: bones[name].rotation.z,
+            };
+        });
+        
+        // 保存旧模型的位置
+        const oldPos = playerMesh ? { x: playerMesh.position.x, z: playerMesh.position.z } : null;
+        
+        playerMesh = model;
+        const startX = -GAME_CONFIG.scene.gridWidth * GAME_CONFIG.scene.tileSize / 2 + 8;
+        if (oldPos) {
+            playerMesh.position.set(oldPos.x, groundOffset, oldPos.z);
+        } else {
+            playerMesh.position.set(startX, groundOffset, 0);
+        }
+        // 保存地面偏移，后续位置更新时需要加上
+        gameState.glbGroundOffset = groundOffset;
+        scene.add(playerMesh);
+        
+        gameState.player = playerMesh;
+        gameState.usingGLBPlayer = true;
+        gameState.glbBones = bones;
+        gameState.glbOrigRot = origRot;
+        gameState.glbOrigHipsY = bones.Hips ? bones.Hips.position.y : 0;
+        
+        gameState.playerAnimTime = 0;
+        gameState.isMoving = false;
+        
+        console.log('GLB模型加载成功，骨骼数:', Object.keys(bones).length);
+        
+    }, undefined, (err) => {
+        console.warn('GLB加载失败，回退到原始模型:', err);
+        if (!gameState.usingGLBPlayer) createPrimitivePlayer();
+    });
+}
+
+// 获取玩家Y坐标基准（GLB模型有groundOffset，原始模型为0）
+function getPlayerGroundY() {
+    return gameState.usingGLBPlayer && gameState.glbGroundOffset ? gameState.glbGroundOffset : 0;
+}
+
+// ===== 原始程序化模型（回退） =====
+function createPrimitivePlayer() {
     const playerGroup = new THREE.Group();
     const skinColor = 0xffdbac;
     const shirtColor = 0x3a6ea5;
@@ -868,38 +991,13 @@ function createPlayer() {
     flashHead.castShadow = false;
     playerGroup.add(flashHead);
     
-    // 手电筒 - 添加到scene而不是playerGroup，避免玩家旋转影响方向
-    const flashlightLight = new THREE.SpotLight(0xddeeff, 3000, 25, Math.PI / 6, 0.7, 3);
-    flashlightLight.position.set(0.4, 1.2, 0.3);
-    flashlightLight.castShadow = true;
-    flashlightLight.shadow.mapSize.width = 1024;
-    flashlightLight.shadow.mapSize.height = 1024;
-    flashlightLight.shadow.bias = -0.002;
-    flashlightLight.shadow.normalBias = 0.02;
-    scene.add(flashlightLight);
-    
-    // target单独添加到scene中 - 这样target.position就是世界坐标
-    // 初始方向：玩家在走廊西端(Z=0)朝东走，flashlightTarget在前方（X正方向）
-    const flashlightTarget = new THREE.Object3D();
-    const playerStartX = -GAME_CONFIG.scene.gridWidth * GAME_CONFIG.scene.tileSize / 2 + 8;
-    flashlightTarget.position.set(
-        playerStartX + 10,  // X正方向=走廊前方
-        0,
-        0
-    );
-    scene.add(flashlightTarget);
-    flashlightLight.target = flashlightTarget;
-    
-    // 存储手电筒引用
-    gameState.flashlightLight = flashlightLight;
-    gameState.flashlightTarget = flashlightTarget;
-    
     playerMesh = playerGroup;
     // 玩家从走廊西端出发
     playerMesh.position.set(-GAME_CONFIG.scene.gridWidth * GAME_CONFIG.scene.tileSize / 2 + 8, 0, 0);
     scene.add(playerMesh);
     
     gameState.player = playerMesh;
+    gameState.usingGLBPlayer = false;
     // 存储动画部件引用
     gameState.playerParts = {
         leftLeg: leftLegGroup,
@@ -1946,7 +2044,7 @@ function updateJump(deltaTime) {
                 gameState.jumpVelocity = 0;
             }
         }
-        if (playerMesh) playerMesh.position.y = gameState.playerY;
+        if (playerMesh) playerMesh.position.y = gameState.playerY + getPlayerGroundY();
         return;
     }
     
@@ -1959,7 +2057,7 @@ function updateJump(deltaTime) {
         gameState.isJumping = false;
     }
     
-    if (playerMesh) playerMesh.position.y = gameState.playerY;
+    if (playerMesh) playerMesh.position.y = gameState.playerY + getPlayerGroundY();
 }
 
 // ============================================
@@ -1992,9 +2090,9 @@ function updateVault(deltaTime) {
         gameState.isVaulting = false;
         gameState.playerY = 0;
         if (playerMesh && gameState.vaultEnd) {
-            playerMesh.position.set(gameState.vaultEnd.x, 0, gameState.vaultEnd.z);
+            playerMesh.position.set(gameState.vaultEnd.x, getPlayerGroundY(), gameState.vaultEnd.z);
         }
-        if (playerMesh) playerMesh.position.y = 0;
+        if (playerMesh) playerMesh.position.y = getPlayerGroundY();
         return;
     }
     
@@ -2004,11 +2102,15 @@ function updateVault(deltaTime) {
         playerMesh.position.x = gameState.vaultStart.x + (gameState.vaultEnd.x - gameState.vaultStart.x) * t;
         playerMesh.position.z = gameState.vaultStart.z + (gameState.vaultEnd.z - gameState.vaultStart.z) * t;
         // 垂直抛物线
-        playerMesh.position.y = 1.5 * Math.sin(t * Math.PI);
+        playerMesh.position.y = 1.5 * Math.sin(t * Math.PI) + getPlayerGroundY();
     }
     
     // 翻越动画：身体前倾
-    if (gameState.playerParts) {
+    if (gameState.usingGLBPlayer && gameState.glbBones) {
+        const bones = gameState.glbBones;
+        if (bones.Spine) bones.Spine.rotation.x = -0.4 * Math.sin(t * Math.PI);
+        if (bones.Spine1) bones.Spine1.rotation.x = -0.2 * Math.sin(t * Math.PI);
+    } else if (gameState.playerParts) {
         gameState.playerParts.body.rotation.x = -0.4 * Math.sin(t * Math.PI);
     }
 }
@@ -2082,7 +2184,22 @@ function performAttack() {
     });
     
     // 攻击动画：右臂挥刀
-    if (gameState.playerParts) {
+    if (gameState.usingGLBPlayer && gameState.glbBones) {
+        const bones = gameState.glbBones;
+        if (bones.RightArm) {
+            bones.RightArm.rotation.x = -1.5;
+            bones.RightArm.rotation.z = -0.8;
+        }
+        if (bones.RightForeArm) {
+            bones.RightForeArm.rotation.x = 0.3;
+        }
+        setTimeout(() => {
+            if (gameState.glbBones) {
+                if (bones.RightArm) { bones.RightArm.rotation.x = 0; bones.RightArm.rotation.z = 0; }
+                if (bones.RightForeArm) bones.RightForeArm.rotation.x = 0;
+            }
+        }, 200);
+    } else if (gameState.playerParts) {
         gameState.playerParts.rightArm.rotation.x = -1.5;
         gameState.playerParts.rightArm.rotation.z = -0.8;
         setTimeout(() => {
@@ -2625,7 +2742,49 @@ function updatePlayer(deltaTime) {
     }
     
     // 玩家走路动画
-    if (gameState.playerParts) {
+    if (gameState.usingGLBPlayer && gameState.glbBones) {
+        // GLB模型：直接驱动Mixamo骨骼，效果更自然
+        const bones = gameState.glbBones;
+        const t = gameState.playerAnimTime;
+        const moveAmount = gameState.isMoving ? 1 : 0;
+        const runMult = gameState.isRunning ? 1.6 : 1.0;
+        
+        // 腿：大腿+小腿协调摆动
+        if (bones.LeftUpLeg) {
+            const legSwing = Math.sin(t) * 0.5 * moveAmount * runMult;
+            bones.LeftUpLeg.rotation.x = legSwing;
+            bones.RightUpLeg.rotation.x = -legSwing;
+            // 小腿：后方时弯曲更多
+            bones.LeftLeg.rotation.x = Math.max(0, -legSwing) * 0.6 + Math.abs(legSwing) * 0.1;
+            bones.RightLeg.rotation.x = Math.max(0, legSwing) * 0.6 + Math.abs(legSwing) * 0.1;
+        }
+        
+        // 手臂：反向摆动
+        if (bones.LeftArm) {
+            const armSwing = Math.sin(t) * 0.4 * moveAmount * runMult;
+            bones.LeftArm.rotation.x = -armSwing;
+            bones.RightArm.rotation.x = armSwing;
+            // 前臂弯曲
+            bones.LeftForeArm.rotation.x = Math.max(0, armSwing) * 0.5 + 0.08 * moveAmount;
+            bones.RightForeArm.rotation.x = Math.max(0, -armSwing) * 0.5 + 0.08 * moveAmount;
+        }
+        
+        // 身体：微微上下起伏
+        if (bones.Hips) {
+            const bounce = Math.abs(Math.sin(t * 2)) * 0.03 * moveAmount * runMult;
+            bones.Hips.position.y = gameState.glbOrigHipsY + bounce;
+            // 脊柱轻微扭转
+            if (bones.Spine1) bones.Spine1.rotation.y = Math.sin(t) * 0.03 * moveAmount;
+            if (bones.Spine2) bones.Spine2.rotation.y = Math.sin(t) * 0.02 * moveAmount;
+        }
+        
+        // 头部：走路时轻微上下点
+        if (bones.Head) {
+            bones.Head.rotation.x = Math.sin(t * 2) * 0.02 * moveAmount;
+        }
+        
+    } else if (gameState.playerParts) {
+        // 原始程序化模型动画
         const parts = gameState.playerParts;
         const t = gameState.playerAnimTime;
         const moveAmount = gameState.isMoving ? 1 : 0;
@@ -2649,15 +2808,26 @@ function updatePlayer(deltaTime) {
     
     camera.position.x = playerMesh.position.x + Math.sin(cameraAngle) * GAME_CONFIG.camera.distance;
     camera.position.z = playerMesh.position.z + Math.cos(cameraAngle) * GAME_CONFIG.camera.distance;
-    camera.lookAt(playerMesh.position.x, 1.2, playerMesh.position.z);
+    camera.lookAt(playerMesh.position.x, 0.3, playerMesh.position.z);
     
     // 更新手电筒位置跟随玩家（不旋转）
     if (gameState.flashlightLight) {
         gameState.flashlightLight.position.set(
             playerMesh.position.x,
-            1.2,
+            0.3,
             playerMesh.position.z
         );
+    }
+    
+    // 更新玩家附近微光跟随
+    if (gameState.playerGlow) {
+        gameState.playerGlow.position.set(
+            playerMesh.position.x,
+            0.25,
+            playerMesh.position.z
+        );
+        // 手电筒开关同步：关灯时微光也变暗
+        gameState.playerGlow.intensity = (gameState.flashlightOn && gameState.battery > 0) ? 15 : 0.5;
     }
     
     // 手电筒方向控制：
