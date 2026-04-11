@@ -1066,13 +1066,133 @@ function createZombies() {
         { x: -20, z: 14 },   // 南侧教室
     ];
     
+    // 先创建原始模型占位（防止异步加载期间mesh为null）
+    createPrimitiveZombies(zombieCount, positions);
+    
+    // 然后异步加载monster GLB模型替换
+    if (window.THREE && window.THREE.GLTFLoader) {
+        const loader = new THREE.GLTFLoader();
+        loader.load('./models/monster.glb', (gltf) => {
+            const baseModel = gltf.scene;
+            const animClip = gltf.animations && gltf.animations.length > 0 ? gltf.animations[0] : null;
+            
+            for (let i = 0; i < zombieCount; i++) {
+                const model = baseModel.clone();
+                
+                // 缩放到与原始僵尸差不多高（约1.6单位）
+                const box = new THREE.Box3().setFromObject(model);
+                const size = box.getSize(new THREE.Vector3());
+                const targetHeight = 1.6;
+                const scale = targetHeight / size.y;
+                model.scale.set(scale, scale, scale);
+                
+                // 底部对齐地面
+                const scaledBox = new THREE.Box3().setFromObject(model);
+                model.position.y -= scaledBox.min.y;
+                
+                // 启用阴影
+                model.traverse(child => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+                
+                // 找骨骼
+                const bones = {};
+                model.traverse(child => {
+                    if (child.isBone) bones[child.name] = child;
+                });
+                
+                // 创建AnimationMixer播放自带动画
+                let zMixer = null;
+                if (animClip) {
+                    zMixer = new THREE.AnimationMixer(model);
+                    const action = zMixer.clipAction(animClip);
+                    action.play();
+                }
+                
+                // 添加红眼发光
+                const eyeGeo = new THREE.SphereGeometry(0.04, 6, 6);
+                const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff2200 });
+                const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+                leftEye.position.set(-0.08, 1.5, 0.2);
+                model.add(leftEye);
+                const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+                rightEye.position.set(0.08, 1.5, 0.2);
+                model.add(rightEye);
+                
+                // 保存旧位置和朝向
+                const oldZombie = gameState.zombies[i];
+                const oldPos = oldZombie ? oldZombie.mesh.position.clone() : new THREE.Vector3(positions[i].x, 0, positions[i].z);
+                const oldAngle = oldZombie ? oldZombie.facingAngle : Math.random() * Math.PI * 2;
+                
+                // 移除旧模型
+                if (oldZombie && oldZombie.mesh) scene.remove(oldZombie.mesh);
+                
+                model.userData.facingAngle = oldAngle;
+                model.rotation.y = oldAngle;
+                model.position.set(oldPos.x, model.position.y, oldPos.z);
+                
+                // 兼容parts接口
+                const parts = {
+                    leftLeg: createZombieBoneProxy(bones['BipTrump L Thigh_021'], bones['BipTrump L Calf_02']),
+                    rightLeg: createZombieBoneProxy(bones['BipTrump R Thigh_021'], bones['BipTrump R Calf_014']),
+                    leftArm: createZombieBoneProxy(bones['BipTrump L UpperArm_011'], bones['BipTrump L Forearm_07']),
+                    rightArm: createZombieBoneProxy(bones['BipTrump R UpperArm_023'], bones['BipTrump R Forearm_019']),
+                    torso: createZombieBoneProxy(bones['BipTrump Spine1_025'], null),
+                    head: createZombieBoneProxy(bones['BipTrump Head_01'], null),
+                };
+                
+                // 更新zombie数据
+                if (oldZombie) {
+                    oldZombie.mesh = model;
+                    oldZombie.parts = parts;
+                    oldZombie.usingGLB = true;
+                    oldZombie.mixer = zMixer;
+                    oldZombie.bones = bones;
+                }
+                
+                scene.add(model);
+            }
+            console.log('Monster GLB加载成功，替换', zombieCount, '个僵尸');
+            
+        }, undefined, (err) => {
+            console.warn('Monster GLB加载失败，保持原始模型:', err);
+        });
+    }
+}
+
+// 僵尸骨骼代理（简化版，直接设置骨骼rotation）
+function createZombieBoneProxy(bone1, bone2) {
+    const proxy = {
+        rotation: { x: 0, y: 0, z: 0 },
+        _b1: bone1, _b2: bone2,
+    };
+    // 用getter/setter让rotation.x/y/z直接驱动骨骼
+    Object.defineProperty(proxy.rotation, 'x', {
+        get() { return this._x || 0; },
+        set(v) { this._x = v; if (this._b1) this._b1.rotation.x = v * 0.6; if (this._b2) this._b2.rotation.x = v * 0.4; }
+    });
+    Object.defineProperty(proxy.rotation, 'y', {
+        get() { return this._y || 0; },
+        set(v) { this._y = v; if (this._b1) this._b1.rotation.y = v * 0.6; if (this._b2) this._b2.rotation.y = v * 0.4; }
+    });
+    Object.defineProperty(proxy.rotation, 'z', {
+        get() { return this._z || 0; },
+        set(v) { this._z = v; if (this._b1) this._b1.rotation.z = v * 0.6; if (this._b2) this._b2.rotation.z = v * 0.4; }
+    });
+    return proxy;
+}
+
+// 原始程序化僵尸模型（回退）
+function createPrimitiveZombies(zombieCount, positions) {
     for (let i = 0; i < zombieCount; i++) {
         const zombieGroup = new THREE.Group();
         const skinColor = 0x5a7a5a;
         const darkSkin = 0x3a5a3a;
         const clothColor = 0x4a4a3a;
         
-        // 腿（破烂裤子）- 用Group包裹做动画
         const leftLegGroup = new THREE.Group();
         leftLegGroup.position.set(-0.16, 0.75, 0);
         const legGeo = new THREE.CylinderGeometry(0.15, 0.14, 0.75, 6);
@@ -1101,7 +1221,6 @@ function createZombies() {
         rightLegGroup.add(rightFoot);
         zombieGroup.add(rightLegGroup);
         
-        // 身体（臃肿/驼背）
         const torsoGeo = new THREE.CylinderGeometry(0.32, 0.28, 0.7, 6);
         const torsoMat = new THREE.MeshStandardMaterial({ color: clothColor, roughness: 1 });
         const torso = new THREE.Mesh(torsoGeo, torsoMat);
@@ -1110,7 +1229,6 @@ function createZombies() {
         torso.castShadow = true;
         zombieGroup.add(torso);
         
-        // 手臂（前伸）- 用Group包裹做动画
         const leftArmGroup = new THREE.Group();
         leftArmGroup.position.set(-0.3, 1.35, 0);
         const armGeo = new THREE.CylinderGeometry(0.09, 0.07, 0.55, 6);
@@ -1133,7 +1251,6 @@ function createZombies() {
         rightArmGroup.add(rightArm);
         zombieGroup.add(rightArmGroup);
         
-        // 头（略大，灰绿色）
         const headGeo = new THREE.SphereGeometry(0.28, 8, 8);
         const headMat = new THREE.MeshStandardMaterial({ color: darkSkin, roughness: 1 });
         const head = new THREE.Mesh(headGeo, headMat);
@@ -1142,7 +1259,6 @@ function createZombies() {
         head.castShadow = true;
         zombieGroup.add(head);
         
-        // 发光红眼
         const eyeGeo = new THREE.SphereGeometry(0.05, 6, 6);
         const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff2200 });
         const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
@@ -1152,14 +1268,12 @@ function createZombies() {
         rightEye.position.set(0.1, 1.63, 0.24);
         zombieGroup.add(rightEye);
         
-        // 嘴巴（深色缝隙）
         const mouthGeo = new THREE.BoxGeometry(0.15, 0.04, 0.06);
         const mouthMat = new THREE.MeshBasicMaterial({ color: 0x1a0a0a });
         const mouth = new THREE.Mesh(mouthGeo, mouthMat);
         mouth.position.set(0, 1.48, 0.25);
         zombieGroup.add(mouth);
         
-        // 血迹（随机深色斑点在衣服上）
         const bloodGeo = new THREE.CircleGeometry(0.06, 5);
         const bloodMat = new THREE.MeshBasicMaterial({ color: 0x440000, side: THREE.DoubleSide });
         const blood1 = new THREE.Mesh(bloodGeo, bloodMat);
@@ -1167,7 +1281,6 @@ function createZombies() {
         blood1.rotation.x = -0.15;
         zombieGroup.add(blood1);
         
-        // 视野方向标记（用一个小锥体朝前方，代表面部方向）
         zombieGroup.userData.facingAngle = Math.random() * Math.PI * 2;
         zombieGroup.rotation.y = zombieGroup.userData.facingAngle;
         
@@ -1199,6 +1312,7 @@ function createZombies() {
                 torso: torso,
                 head: head,
             },
+            usingGLB: false,
         });
         
         scene.add(zombieGroup);
@@ -3150,22 +3264,47 @@ function updateZombies(deltaTime) {
         }
         
         // 僵尸走路动画
-        const zt = zombie.animTime;
-        const p = zombie.parts;
-        const chaseMult = zombie.state === 'chase' ? 1.5 : 1;
-        
-        // 腿拖沓摆动
-        p.leftLeg.rotation.x = Math.sin(zt) * 0.4 * chaseMult;
-        p.rightLeg.rotation.x = Math.sin(zt + Math.PI) * 0.4 * chaseMult;
-        
-        // 手臂前伸摆动（僵尸特有：僵硬前伸+微摆）
-        p.leftArm.rotation.x = -0.8 + Math.sin(zt + Math.PI) * 0.15 * chaseMult;
-        p.rightArm.rotation.x = -0.9 + Math.sin(zt) * 0.15 * chaseMult;
-        
-        // 身体微微摇晃
-        p.torso.rotation.z = Math.sin(zt * 0.5) * 0.05;
-        // 驼背追击时前倾更多
-        p.torso.rotation.x = 0.15 + (zombie.state === 'chase' ? 0.1 : 0);
+        if (zombie.usingGLB && zombie.mixer) {
+            // GLB模型：用AnimationMixer播放自带动画，手动骨骼叠加僵尸姿态
+            zombie.mixer.update(deltaTime);
+            const zt = zombie.animTime;
+            const chaseMult = zombie.state === 'chase' ? 1.5 : 1;
+            const bones = zombie.bones;
+            if (bones) {
+                // 手臂前伸叠加（僵尸特有姿态）
+                if (bones['BipTrump L UpperArm_011']) {
+                    bones['BipTrump L UpperArm_011'].rotation.x += -0.8 + Math.sin(zt + Math.PI) * 0.15 * chaseMult;
+                    bones['BipTrump L UpperArm_011'].rotation.z += 0.1;
+                }
+                if (bones['BipTrump R UpperArm_023']) {
+                    bones['BipTrump R UpperArm_023'].rotation.x += -0.9 + Math.sin(zt) * 0.15 * chaseMult;
+                    bones['BipTrump R UpperArm_023'].rotation.z += -0.1;
+                }
+                // 身体前倾
+                if (bones['BipTrump Spine1_025']) {
+                    bones['BipTrump Spine1_025'].rotation.x += 0.15 + (zombie.state === 'chase' ? 0.1 : 0);
+                    bones['BipTrump Spine1_025'].rotation.z += Math.sin(zt * 0.5) * 0.05;
+                }
+            }
+        } else {
+            // 原始模型：手动骨骼动画
+            const zt = zombie.animTime;
+            const p = zombie.parts;
+            const chaseMult = zombie.state === 'chase' ? 1.5 : 1;
+            
+            // 腿拖沓摆动
+            p.leftLeg.rotation.x = Math.sin(zt) * 0.4 * chaseMult;
+            p.rightLeg.rotation.x = Math.sin(zt + Math.PI) * 0.4 * chaseMult;
+            
+            // 手臂前伸摆动（僵尸特有：僵硬前伸+微摆）
+            p.leftArm.rotation.x = -0.8 + Math.sin(zt + Math.PI) * 0.15 * chaseMult;
+            p.rightArm.rotation.x = -0.9 + Math.sin(zt) * 0.15 * chaseMult;
+            
+            // 身体微微摇晃
+            p.torso.rotation.z = Math.sin(zt * 0.5) * 0.05;
+            // 驼背追击时前倾更多
+            p.torso.rotation.x = 0.15 + (zombie.state === 'chase' ? 0.1 : 0);
+        }
         
         // 头部微微左右摆
         p.head.rotation.z = Math.sin(zt * 0.3) * 0.08;
