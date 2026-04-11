@@ -202,12 +202,271 @@ function init() {
     
     setupEventListeners();
     
-    animate();
+    // 预加载GLB模型，加载完再开始游戏循环
+    preloadAssets();
     
     } catch(e) {
         console.error('init()崩溃:', e.message, e.stack);
         alert('游戏初始化失败: ' + e.message);
     }
+}
+
+// ============================================
+// 资源预加载系统
+// ============================================
+const assetLoader = {
+    loaded: 0,
+    total: 0,
+    assets: {},  // 存储加载完成的资源
+    callbacks: [],
+    
+    // 更新进度条
+    updateProgress(itemName) {
+        this.loaded++;
+        const pct = Math.round((this.loaded / this.total) * 100);
+        const bar = document.getElementById('loading-bar');
+        const text = document.getElementById('loading-text');
+        const percent = document.getElementById('loading-percent');
+        if (bar) bar.style.width = pct + '%';
+        if (percent) percent.textContent = pct + '%';
+        if (text) text.textContent = '加载: ' + itemName;
+        
+        if (this.loaded >= this.total) {
+            // 全部加载完成
+            setTimeout(() => {
+                const loadingScreen = document.getElementById('loading-screen');
+                if (loadingScreen) loadingScreen.style.display = 'none';
+                // 执行所有回调
+                this.callbacks.forEach(cb => cb());
+                // 开始游戏循环
+                animate();
+            }, 200);
+        }
+    },
+    
+    // 加载失败时的处理
+    onItemFailed(itemName) {
+        this.loaded++;
+        const pct = Math.round((this.loaded / this.total) * 100);
+        const bar = document.getElementById('loading-bar');
+        const percent = document.getElementById('loading-percent');
+        if (bar) bar.style.width = pct + '%';
+        if (percent) percent.textContent = pct + '%';
+        
+        if (this.loaded >= this.total) {
+            setTimeout(() => {
+                const loadingScreen = document.getElementById('loading-screen');
+                if (loadingScreen) loadingScreen.style.display = 'none';
+                this.callbacks.forEach(cb => cb());
+                animate();
+            }, 200);
+        }
+    }
+};
+
+function preloadAssets() {
+    // 显示加载界面
+    const loadingScreen = document.getElementById('loading-screen');
+    if (loadingScreen) loadingScreen.style.display = 'block';
+    
+    // 隐藏游戏UI直到加载完成
+    const startScreen = document.getElementById('start-screen');
+    if (startScreen) startScreen.style.display = 'none';
+    
+    // 计算需要加载的资源数量
+    let needLoad = 0;
+    if (window.THREE && window.THREE.GLTFLoader) needLoad += 2; // Aj.glb + monster.glb
+    assetLoader.total = Math.max(needLoad, 1);
+    assetLoader.loaded = 0;
+    
+    if (!window.THREE || !window.THREE.GLTFLoader) {
+        // 没有GLTFLoader，直接开始
+        assetLoader.total = 1;
+        assetLoader.onItemFailed('无GLTFLoader，跳过');
+        return;
+    }
+    
+    const loader = new THREE.GLTFLoader();
+    
+    // 加载玩家模型
+    loader.load('./models/Aj.glb', (gltf) => {
+        assetLoader.assets.playerModel = gltf;
+        applyLoadedPlayerModel(gltf);
+        assetLoader.updateProgress('角色模型');
+    }, 
+    (xhr) => {
+        // 进度回调
+        if (xhr.total > 0) {
+            const pct = Math.round((xhr.loaded / xhr.total) * 50); // 占总进度50%
+            const bar = document.getElementById('loading-bar');
+            if (bar) bar.style.width = pct + '%';
+        }
+    },
+    (err) => {
+        console.warn('玩家GLB加载失败，回退原始模型:', err);
+        if (!gameState.usingGLBPlayer) createPrimitivePlayer();
+        assetLoader.onItemFailed('角色模型(失败)');
+    });
+    
+    // 加载怪物模型
+    loader.load('./models/monster.glb', (gltf) => {
+        assetLoader.assets.monsterModel = gltf;
+        applyLoadedMonsterModel(gltf);
+        assetLoader.updateProgress('怪物模型');
+    },
+    (xhr) => {
+        if (xhr.total > 0) {
+            const pct = 50 + Math.round((xhr.loaded / xhr.total) * 50); // 占总进度50%
+            const bar = document.getElementById('loading-bar');
+            if (bar) bar.style.width = pct + '%';
+        }
+    },
+    (err) => {
+        console.warn('怪物GLB加载失败，保持原始模型:', err);
+        assetLoader.onItemFailed('怪物模型(失败)');
+    });
+}
+
+// 应用已加载的玩家GLB模型
+function applyLoadedPlayerModel(gltf) {
+    const model = gltf.scene;
+    
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const targetHeight = 0.45;
+    const scale = targetHeight / size.y;
+    model.scale.set(scale, scale, scale);
+    
+    const scaledBox = new THREE.Box3().setFromObject(model);
+    const groundOffset = -scaledBox.min.y;
+    
+    model.traverse(child => {
+        if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+        }
+    });
+    
+    const bones = {};
+    model.traverse(child => {
+        if (child.isBone) {
+            const name = child.name.replace('mixamorig:', '');
+            bones[name] = child;
+        }
+    });
+    
+    const origRot = {};
+    Object.keys(bones).forEach(name => {
+        origRot[name] = {
+            x: bones[name].rotation.x,
+            y: bones[name].rotation.y,
+            z: bones[name].rotation.z,
+        };
+    });
+    
+    const currentPos = { x: playerMesh.position.x, z: playerMesh.position.z };
+    
+    while (playerMesh.children.length > 0) {
+        playerMesh.remove(playerMesh.children[0]);
+    }
+    playerMesh.add(model);
+    playerMesh.position.set(currentPos.x, groundOffset, currentPos.z);
+    playerMesh.visible = true;
+    
+    gameState.glbGroundOffset = groundOffset;
+    gameState.usingGLBPlayer = true;
+    gameState.glbBones = bones;
+    gameState.glbOrigRot = origRot;
+    gameState.glbOrigHipsY = bones.Hips ? bones.Hips.position.y : 0;
+    gameState.playerAnimTime = 0;
+    gameState.isMoving = false;
+    
+    applyGLBIdlePose(bones);
+    console.log('GLB模型加载成功，骨骼数:', Object.keys(bones).length, 'groundOffset:', groundOffset);
+}
+
+// 应用已加载的怪物GLB模型
+function applyLoadedMonsterModel(gltf) {
+    const baseModel = gltf.scene;
+    const animClip = gltf.animations && gltf.animations.length > 0 ? gltf.animations[0] : null;
+    const zombieCount = 3;
+    const positions = [
+        { x: -15, z: -14 },
+        { x: 25, z: -14 },
+        { x: -20, z: 14 },
+    ];
+    
+    for (let i = 0; i < zombieCount; i++) {
+        const model = baseModel.clone();
+        
+        const box = new THREE.Box3().setFromObject(model);
+        const size = box.getSize(new THREE.Vector3());
+        const targetHeight = 1.6;
+        const scale = targetHeight / size.y;
+        model.scale.set(scale, scale, scale);
+        
+        const scaledBox = new THREE.Box3().setFromObject(model);
+        model.position.y -= scaledBox.min.y;
+        
+        model.traverse(child => {
+            if (child.isMesh) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+            }
+        });
+        
+        const bones = {};
+        model.traverse(child => {
+            if (child.isBone) bones[child.name] = child;
+        });
+        
+        let zMixer = null;
+        if (animClip) {
+            zMixer = new THREE.AnimationMixer(model);
+            const action = zMixer.clipAction(animClip);
+            action.play();
+        }
+        
+        // 红眼发光
+        const eyeGeo = new THREE.SphereGeometry(0.04, 6, 6);
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff2200 });
+        const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+        leftEye.position.set(-0.08, 1.5, 0.2);
+        model.add(leftEye);
+        const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+        rightEye.position.set(0.08, 1.5, 0.2);
+        model.add(rightEye);
+        
+        const oldZombie = gameState.zombies[i];
+        const oldPos = oldZombie ? oldZombie.mesh.position.clone() : new THREE.Vector3(positions[i].x, 0, positions[i].z);
+        const oldAngle = oldZombie ? oldZombie.facingAngle : Math.random() * Math.PI * 2;
+        
+        if (oldZombie && oldZombie.mesh) scene.remove(oldZombie.mesh);
+        
+        model.userData.facingAngle = oldAngle;
+        model.rotation.y = oldAngle;
+        model.position.set(oldPos.x, model.position.y, oldPos.z);
+        
+        const parts = {
+            leftLeg: createZombieBoneProxy(bones['BipTrump L Thigh_021'], bones['BipTrump L Calf_02']),
+            rightLeg: createZombieBoneProxy(bones['BipTrump R Thigh_021'], bones['BipTrump R Calf_014']),
+            leftArm: createZombieBoneProxy(bones['BipTrump L UpperArm_011'], bones['BipTrump L Forearm_07']),
+            rightArm: createZombieBoneProxy(bones['BipTrump R UpperArm_023'], bones['BipTrump R Forearm_019']),
+            torso: createZombieBoneProxy(bones['BipTrump Spine1_025'], null),
+            head: createZombieBoneProxy(bones['BipTrump Head_01'], null),
+        };
+        
+        if (oldZombie) {
+            oldZombie.mesh = model;
+            oldZombie.parts = parts;
+            oldZombie.usingGLB = true;
+            oldZombie.mixer = zMixer;
+            oldZombie.bones = bones;
+        }
+        
+        scene.add(model);
+    }
+    console.log('Monster GLB加载成功，替换', zombieCount, '个僵尸');
 }
 
 // ============================================
@@ -773,14 +1032,12 @@ function createPlayer() {
     scene.add(playerMesh);
     gameState.player = playerMesh;
     
-    // 优先尝试GLB模型，加载失败才回退原始模型
-    // 避免先创建原始模型再替换的双重资源浪费
-    if (window.THREE && window.THREE.GLTFLoader) {
-        createGLBPlayer();
-    } else {
-        // 没有GLTFLoader，直接用原始模型
+    // GLB模型由 preloadAssets() 统一加载，不再在createPlayer中异步加载
+    // 如果没有GLTFLoader，直接用原始模型
+    if (!window.THREE || !window.THREE.GLTFLoader) {
         createPrimitivePlayer();
     }
+    // 否则等待 preloadAssets() 完成后调用 applyLoadedPlayerModel()
 }
 
 // 创建手电筒灯光（只调用一次）
@@ -814,79 +1071,7 @@ function createFlashlight() {
 }
 
 // ===== GLB模型玩家 =====
-function createGLBPlayer() {
-    const loader = new THREE.GLTFLoader();
-    loader.load('./models/Aj.glb', (gltf) => {
-        const model = gltf.scene;
-        
-        // 缩放到目标高度
-        const box = new THREE.Box3().setFromObject(model);
-        const size = box.getSize(new THREE.Vector3());
-        const targetHeight = 0.45;
-        const scale = targetHeight / size.y;
-        model.scale.set(scale, scale, scale);
-        
-        // 底部对齐地面
-        const scaledBox = new THREE.Box3().setFromObject(model);
-        const groundOffset = -scaledBox.min.y;
-        
-        // 启用阴影
-        model.traverse(child => {
-            if (child.isMesh) {
-                child.castShadow = true;
-                child.receiveShadow = true;
-            }
-        });
-        
-        // 找骨骼
-        const bones = {};
-        model.traverse(child => {
-            if (child.isBone) {
-                const name = child.name.replace('mixamorig:', '');
-                bones[name] = child;
-            }
-        });
-        
-        // 记录原始旋转
-        const origRot = {};
-        Object.keys(bones).forEach(name => {
-            origRot[name] = {
-                x: bones[name].rotation.x,
-                y: bones[name].rotation.y,
-                z: bones[name].rotation.z,
-            };
-        });
-        
-        // 保存当前位置（占位Group的位置）
-        const currentPos = { x: playerMesh.position.x, z: playerMesh.position.z };
-        
-        // 清除占位Group内容，将GLB模型加入
-        while (playerMesh.children.length > 0) {
-            playerMesh.remove(playerMesh.children[0]);
-        }
-        playerMesh.add(model);
-        playerMesh.position.set(currentPos.x, groundOffset, currentPos.z);
-        playerMesh.visible = true; // 加载完成，显示模型
-        
-        gameState.glbGroundOffset = groundOffset;
-        gameState.usingGLBPlayer = true;
-        gameState.glbBones = bones;
-        gameState.glbOrigRot = origRot;
-        gameState.glbOrigHipsY = bones.Hips ? bones.Hips.position.y : 0;
-        
-        gameState.playerAnimTime = 0;
-        gameState.isMoving = false;
-        
-        // 立即应用idle姿态，避免T-Pose闪现
-        applyGLBIdlePose(bones);
-        
-        console.log('GLB模型加载成功，骨骼数:', Object.keys(bones).length, 'groundOffset:', groundOffset);
-        
-    }, undefined, (err) => {
-        console.warn('GLB加载失败，回退到原始模型:', err);
-        if (!gameState.usingGLBPlayer) createPrimitivePlayer();
-    });
-}
+// GLB模型加载逻辑已移到 applyLoadedPlayerModel()（由 preloadAssets 调用）
 
 // 获取玩家Y坐标基准（GLB模型有groundOffset，原始模型为0）
 // 应用GLB模型idle姿态（消除T-Pose）
@@ -1077,100 +1262,39 @@ function createZombies() {
         { x: -20, z: 14 },   // 南侧教室
     ];
     
-    // 先创建原始模型占位（防止异步加载期间mesh为null）
-    createPrimitiveZombies(zombieCount, positions);
-    
-    // 然后异步加载monster GLB模型替换
-    if (window.THREE && window.THREE.GLTFLoader) {
-        const loader = new THREE.GLTFLoader();
-        loader.load('./models/monster.glb', (gltf) => {
-            const baseModel = gltf.scene;
-            const animClip = gltf.animations && gltf.animations.length > 0 ? gltf.animations[0] : null;
-            
-            for (let i = 0; i < zombieCount; i++) {
-                const model = baseModel.clone();
-                
-                // 缩放到与原始僵尸差不多高（约1.6单位）
-                const box = new THREE.Box3().setFromObject(model);
-                const size = box.getSize(new THREE.Vector3());
-                const targetHeight = 1.6;
-                const scale = targetHeight / size.y;
-                model.scale.set(scale, scale, scale);
-                
-                // 底部对齐地面
-                const scaledBox = new THREE.Box3().setFromObject(model);
-                model.position.y -= scaledBox.min.y;
-                
-                // 启用阴影
-                model.traverse(child => {
-                    if (child.isMesh) {
-                        child.castShadow = true;
-                        child.receiveShadow = true;
-                    }
-                });
-                
-                // 找骨骼
-                const bones = {};
-                model.traverse(child => {
-                    if (child.isBone) bones[child.name] = child;
-                });
-                
-                // 创建AnimationMixer播放自带动画
-                let zMixer = null;
-                if (animClip) {
-                    zMixer = new THREE.AnimationMixer(model);
-                    const action = zMixer.clipAction(animClip);
-                    action.play();
-                }
-                
-                // 添加红眼发光
-                const eyeGeo = new THREE.SphereGeometry(0.04, 6, 6);
-                const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff2200 });
-                const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
-                leftEye.position.set(-0.08, 1.5, 0.2);
-                model.add(leftEye);
-                const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
-                rightEye.position.set(0.08, 1.5, 0.2);
-                model.add(rightEye);
-                
-                // 保存旧位置和朝向
-                const oldZombie = gameState.zombies[i];
-                const oldPos = oldZombie ? oldZombie.mesh.position.clone() : new THREE.Vector3(positions[i].x, 0, positions[i].z);
-                const oldAngle = oldZombie ? oldZombie.facingAngle : Math.random() * Math.PI * 2;
-                
-                // 移除旧模型
-                if (oldZombie && oldZombie.mesh) scene.remove(oldZombie.mesh);
-                
-                model.userData.facingAngle = oldAngle;
-                model.rotation.y = oldAngle;
-                model.position.set(oldPos.x, model.position.y, oldPos.z);
-                
-                // 兼容parts接口
-                const parts = {
-                    leftLeg: createZombieBoneProxy(bones['BipTrump L Thigh_021'], bones['BipTrump L Calf_02']),
-                    rightLeg: createZombieBoneProxy(bones['BipTrump R Thigh_021'], bones['BipTrump R Calf_014']),
-                    leftArm: createZombieBoneProxy(bones['BipTrump L UpperArm_011'], bones['BipTrump L Forearm_07']),
-                    rightArm: createZombieBoneProxy(bones['BipTrump R UpperArm_023'], bones['BipTrump R Forearm_019']),
-                    torso: createZombieBoneProxy(bones['BipTrump Spine1_025'], null),
-                    head: createZombieBoneProxy(bones['BipTrump Head_01'], null),
-                };
-                
-                // 更新zombie数据
-                if (oldZombie) {
-                    oldZombie.mesh = model;
-                    oldZombie.parts = parts;
-                    oldZombie.usingGLB = true;
-                    oldZombie.mixer = zMixer;
-                    oldZombie.bones = bones;
-                }
-                
-                scene.add(model);
-            }
-            console.log('Monster GLB加载成功，替换', zombieCount, '个僵尸');
-            
-        }, undefined, (err) => {
-            console.warn('Monster GLB加载失败，保持原始模型:', err);
-        });
+    // GLB模型由 preloadAssets() 统一加载，这里只创建不可见占位
+    // 如果没有GLTFLoader，才创建原始模型
+    if (!window.THREE || !window.THREE.GLTFLoader) {
+        createPrimitiveZombies(zombieCount, positions);
+    } else {
+        // 创建不可见占位，防止游戏循环中zombie.mesh为null
+        for (let i = 0; i < zombieCount; i++) {
+            const placeholder = new THREE.Group();
+            placeholder.position.set(positions[i].x, 0, positions[i].z);
+            placeholder.visible = false;
+            scene.add(placeholder);
+            gameState.zombies.push({
+                mesh: placeholder,
+                parts: {},
+                facingAngle: Math.random() * Math.PI * 2,
+                health: 100,
+                maxHealth: 100,
+                speed: 1.5,
+                detectionRange: 6,
+                visionRange: 10,
+                attackRange: 1.5,
+                attackDamage: 15,
+                attackCooldown: 0,
+                isChasing: false,
+                patrolTarget: null,
+                patrolTimer: Math.random() * 5,
+                lastSeenPlayerPos: null,
+                usingGLB: false,
+                mixer: null,
+                bones: null,
+            });
+        }
+        // GLB加载完成后由 applyLoadedMonsterModel() 替换占位
     }
 }
 
@@ -1858,7 +1982,10 @@ function setupEventListeners() {
     window.startGameFromLobby = function(seed) {
         document.getElementById('lobby-screen') && (document.getElementById('lobby-screen').style.display = 'none');
         document.getElementById('room-screen') && (document.getElementById('room-screen').style.display = 'none');
-        document.getElementById('start-screen') && (document.getElementById('start-screen').style.display = 'none');
+        // 不隐藏 start-screen，因为加载进度条会覆盖它
+        // 显示加载进度条
+        const loadingScreen = document.getElementById('loading-screen');
+        if (loadingScreen) loadingScreen.style.display = 'block';
         gameState.isPlaying = true;
         // 启动联机同步
         if (typeof startSync === 'function') {
