@@ -758,11 +758,12 @@ function createPlayer() {
     // 手电筒灯光（只创建一次，两种模型共用）
     createFlashlight();
     
-    // 尝试加载GLB模型（GLTFLoader已同步加载）
+    // 先创建原始模型作为占位（同步，确保playerMesh立即可用）
+    createPrimitivePlayer();
+    
+    // 再尝试异步加载GLB模型，加载成功后替换
     if (window.THREE && window.THREE.GLTFLoader) {
         createGLBPlayer();
-    } else {
-        createPrimitivePlayer();
     }
 }
 
@@ -791,7 +792,7 @@ function createFlashlight() {
     // 玩家附近微弱点光源 — 模拟手电筒反光照亮持筒者+周围
     // 强度低，衰减快，只照亮1-2米范围，让人物和附近地面稍微可见
     const playerGlow = new THREE.PointLight(0xccddff, 15, 4, 2);
-    playerGlow.position.set(0, 0.25, 0);
+    playerGlow.position.set(0, 0.3, 0);
     scene.add(playerGlow);
     gameState.playerGlow = playerGlow;
 }
@@ -840,8 +841,9 @@ function createGLBPlayer() {
             };
         });
         
-        // 保存旧模型的位置
+        // 保存旧模型的位置，然后移除旧模型
         const oldPos = playerMesh ? { x: playerMesh.position.x, z: playerMesh.position.z } : null;
+        if (playerMesh) scene.remove(playerMesh);
         
         playerMesh = model;
         const startX = -GAME_CONFIG.scene.gridWidth * GAME_CONFIG.scene.tileSize / 2 + 8;
@@ -2823,7 +2825,7 @@ function updatePlayer(deltaTime) {
     if (gameState.playerGlow) {
         gameState.playerGlow.position.set(
             playerMesh.position.x,
-            0.25,
+            0.3,
             playerMesh.position.z
         );
         // 手电筒开关同步：关灯时微光也变暗
