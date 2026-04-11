@@ -803,16 +803,16 @@ function createGLBPlayer() {
     loader.load('./models/Aj.glb', (gltf) => {
         const model = gltf.scene;
         
-        // 缩放到约1.8单位高
+        // 缩放到目标高度
         const box = new THREE.Box3().setFromObject(model);
         const size = box.getSize(new THREE.Vector3());
         const targetHeight = 0.45;
         const scale = targetHeight / size.y;
         model.scale.set(scale, scale, scale);
         
-        // 底部对齐地面：计算缩放后的Y偏移
+        // 底部对齐地面
         const scaledBox = new THREE.Box3().setFromObject(model);
-        const groundOffset = -scaledBox.min.y; // 让模型底部在y=0
+        const groundOffset = -scaledBox.min.y;
         
         // 启用阴影
         model.traverse(child => {
@@ -852,7 +852,6 @@ function createGLBPlayer() {
         } else {
             playerMesh.position.set(startX, groundOffset, 0);
         }
-        // 保存地面偏移，后续位置更新时需要加上
         gameState.glbGroundOffset = groundOffset;
         scene.add(playerMesh);
         
@@ -865,10 +864,10 @@ function createGLBPlayer() {
         gameState.playerAnimTime = 0;
         gameState.isMoving = false;
         
-        console.log('GLB模型加载成功，骨骼数:', Object.keys(bones).length);
-        
         // 立即应用idle姿态，避免T-Pose闪现
         applyGLBIdlePose(bones);
+        
+        console.log('GLB模型加载成功，骨骼数:', Object.keys(bones).length, 'groundOffset:', groundOffset);
         
     }, undefined, (err) => {
         console.warn('GLB加载失败，回退到原始模型:', err);
