@@ -153,6 +153,7 @@ let aimJoystickEverUsed = false; // 右摇杆是否使用过（一旦使用，�
 // 初始化游戏
 // ============================================
 function init() {
+    try {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x050508);
     scene.fog = new THREE.Fog(0x050508, 12, 47);
@@ -202,6 +203,11 @@ function init() {
     setupEventListeners();
     
     animate();
+    
+    } catch(e) {
+        console.error('init()崩溃:', e.message, e.stack);
+        alert('游戏初始化失败: ' + e.message);
+    }
 }
 
 // ============================================
