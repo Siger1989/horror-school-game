@@ -78,8 +78,8 @@ const GAME_CONFIG = {
         exitDoorLocked: true,
     },
     camera: {
-        height: 28,
-        distance: 20,
+        height: 13,
+        distance: 7,
     },
 };
 
@@ -867,6 +867,9 @@ function createGLBPlayer() {
         
         console.log('GLB模型加载成功，骨骼数:', Object.keys(bones).length);
         
+        // 立即应用idle姿态，避免T-Pose闪现
+        applyGLBIdlePose(bones);
+        
     }, undefined, (err) => {
         console.warn('GLB加载失败，回退到原始模型:', err);
         if (!gameState.usingGLBPlayer) createPrimitivePlayer();
@@ -874,6 +877,34 @@ function createGLBPlayer() {
 }
 
 // 获取玩家Y坐标基准（GLB模型有groundOffset，原始模型为0）
+// 应用GLB模型idle姿态（消除T-Pose）
+function applyGLBIdlePose(bones) {
+    const pose = {
+        LeftUpLeg: {x:0, y:0, z:0.05}, RightUpLeg: {x:0, y:0, z:-0.05},
+        LeftLeg: {x:0, y:0, z:0}, RightLeg: {x:0, y:0, z:0},
+        LeftArm: {x:0, y:0, z:0.15}, RightArm: {x:0, y:0, z:-0.15},
+        LeftForeArm: {x:-0.3, y:0, z:0}, RightForeArm: {x:-0.3, y:0, z:0},
+        LeftShoulder: {x:0, y:0, z:0}, RightShoulder: {x:0, y:0, z:0},
+        LeftHand: {x:0, y:0, z:0}, RightHand: {x:0, y:0, z:0},
+        LeftToeBase: {x:0, y:0, z:0}, RightToeBase: {x:0, y:0, z:0},
+        Neck: {x:0, y:0, z:0}, Head: {x:0, y:0, z:0},
+        Spine: {x:0, y:0, z:0}, Spine1: {x:0, y:0, z:0}, Spine2: {x:0, y:0, z:0},
+    };
+    Object.keys(pose).forEach(name => {
+        if (!bones[name]) return;
+        bones[name].rotation.x = pose[name].x;
+        bones[name].rotation.y = pose[name].y;
+        bones[name].rotation.z = pose[name].z;
+    });
+    // 其余骨骼全部归零（消除T-Pose中手臂水平展开等）
+    Object.keys(bones).forEach(name => {
+        if (pose[name]) return; // 已设置的跳过
+        bones[name].rotation.x = 0;
+        bones[name].rotation.y = 0;
+        bones[name].rotation.z = 0;
+    });
+}
+
 function getPlayerGroundY() {
     return gameState.usingGLBPlayer && gameState.glbGroundOffset ? gameState.glbGroundOffset : 0;
 }
@@ -2745,44 +2776,64 @@ function updatePlayer(deltaTime) {
     
     // 玩家走路动画
     if (gameState.usingGLBPlayer && gameState.glbBones) {
-        // GLB模型：直接驱动Mixamo骨骼，效果更自然
+        // GLB模型：直接驱动Mixamo骨骼
         const bones = gameState.glbBones;
         const t = gameState.playerAnimTime;
         const moveAmount = gameState.isMoving ? 1 : 0;
         const runMult = gameState.isRunning ? 1.6 : 1.0;
+        const blend = Math.min(moveAmount * 5 * deltaTime * 60, 1); // 平滑过渡到走路
         
-        // 腿：大腿+小腿协调摆动
+        // 站立姿态（含呼吸微动）— 覆盖所有主要骨骼
+        const breathT = performance.now() * 0.001; // 用真实时间做呼吸，不受移动影响
+        const breathCycle = Math.sin(breathT * 1.5) * 0.5 + 0.5; // 0~1 缓慢呼吸
+        const idle = {
+            Hips: {x:0, y:0, z:0},
+            Spine: {x: breathCycle * 0.01, y:0, z:0}, Spine1: {x: breathCycle * 0.015, y:0, z:0}, Spine2: {x: breathCycle * 0.01, y:0, z:0},
+            Neck: {x: -breathCycle * 0.008, y:0, z:0}, Head: {x: breathCycle * 0.005, y:0, z:0},
+            LeftShoulder: {x:0, y:0, z:0}, RightShoulder: {x:0, y:0, z:0},
+            LeftUpLeg: {x:0, y:0, z:0.05}, RightUpLeg: {x:0, y:0, z:-0.05},
+            LeftLeg: {x:0, y:0, z:0}, RightLeg: {x:0, y:0, z:0},
+            LeftArm: {x: breathCycle * 0.02, y:0, z:0.15}, RightArm: {x: breathCycle * 0.02, y:0, z:-0.15},
+            LeftForeArm: {x:-0.3, y:0, z:0}, RightForeArm: {x:-0.3, y:0, z:0},
+            LeftHand: {x:0, y:0, z:0}, RightHand: {x:0, y:0, z:0},
+            LeftToeBase: {x:0, y:0, z:0}, RightToeBase: {x:0, y:0, z:0},
+        };
+        
+        // 走路动画值
+        const walk = {};
         if (bones.LeftUpLeg) {
-            const legSwing = Math.sin(t) * 0.5 * moveAmount * runMult;
-            bones.LeftUpLeg.rotation.x = legSwing;
-            bones.RightUpLeg.rotation.x = -legSwing;
-            // 小腿：后方时弯曲更多
-            bones.LeftLeg.rotation.x = Math.max(0, -legSwing) * 0.6 + Math.abs(legSwing) * 0.1;
-            bones.RightLeg.rotation.x = Math.max(0, legSwing) * 0.6 + Math.abs(legSwing) * 0.1;
+            const legSwing = Math.sin(t) * 0.5 * runMult;
+            const armSwing = Math.sin(t) * 0.4 * runMult;
+            walk.LeftUpLeg = {x: legSwing, y:0, z:0.05};
+            walk.RightUpLeg = {x: -legSwing, y:0, z:-0.05};
+            walk.LeftLeg = {x: Math.max(0, -legSwing)*0.6 + Math.abs(legSwing)*0.1, y:0, z:0};
+            walk.RightLeg = {x: Math.max(0, legSwing)*0.6 + Math.abs(legSwing)*0.1, y:0, z:0};
+            walk.LeftArm = {x: -armSwing, y:0, z:0.15};
+            walk.RightArm = {x: armSwing, y:0, z:-0.15};
+            walk.LeftForeArm = {x: Math.max(0, armSwing)*0.5 + 0.08, y:0, z:0};
+            walk.RightForeArm = {x: Math.max(0, -armSwing)*0.5 + 0.08, y:0, z:0};
         }
+        if (bones.Spine1) walk.Spine1 = {x:0, y: Math.sin(t)*0.03, z:0};
+        if (bones.Spine2) walk.Spine2 = {x:0, y: Math.sin(t)*0.02, z:0};
+        walk.Head = {x: Math.sin(t*2)*0.02, y:0, z:0};
+        walk.Hips = {x:0, y:0, z:0};
+        walk.Spine = {x:0, y:0, z:0};
         
-        // 手臂：反向摆动
-        if (bones.LeftArm) {
-            const armSwing = Math.sin(t) * 0.4 * moveAmount * runMult;
-            bones.LeftArm.rotation.x = -armSwing;
-            bones.RightArm.rotation.x = armSwing;
-            // 前臂弯曲
-            bones.LeftForeArm.rotation.x = Math.max(0, armSwing) * 0.5 + 0.08 * moveAmount;
-            bones.RightForeArm.rotation.x = Math.max(0, -armSwing) * 0.5 + 0.08 * moveAmount;
-        }
+        // 混合站立和走路
+        const lerpVal = (a, b, t) => a + (b - a) * t;
+        Object.keys(idle).forEach(name => {
+            if (!bones[name]) return;
+            const i = idle[name], w = walk[name] || i;
+            bones[name].rotation.x = lerpVal(i.x, w.x, blend);
+            bones[name].rotation.y = lerpVal(i.y, w.y, blend);
+            bones[name].rotation.z = lerpVal(i.z, w.z, blend);
+        });
         
-        // 身体：微微上下起伏
+        // Hips上下起伏（走路+呼吸）
         if (bones.Hips) {
-            const bounce = Math.abs(Math.sin(t * 2)) * 0.03 * moveAmount * runMult;
-            bones.Hips.position.y = gameState.glbOrigHipsY + bounce;
-            // 脊柱轻微扭转
-            if (bones.Spine1) bones.Spine1.rotation.y = Math.sin(t) * 0.03 * moveAmount;
-            if (bones.Spine2) bones.Spine2.rotation.y = Math.sin(t) * 0.02 * moveAmount;
-        }
-        
-        // 头部：走路时轻微上下点
-        if (bones.Head) {
-            bones.Head.rotation.x = Math.sin(t * 2) * 0.02 * moveAmount;
+            const walkBounce = Math.abs(Math.sin(t * 2)) * 0.03 * blend * runMult;
+            const breathBounce = breathCycle * 0.005 * (1 - blend); // 站立时呼吸起伏
+            bones.Hips.position.y = gameState.glbOrigHipsY + walkBounce + breathBounce;
         }
         
     } else if (gameState.playerParts) {
@@ -2832,48 +2883,18 @@ function updatePlayer(deltaTime) {
         gameState.playerGlow.intensity = (gameState.flashlightOn && gameState.battery > 0) ? 15 : 0.5;
     }
     
-    // 手电筒方向控制：
-    // 1. 右摇杆激活时 → 直接控制电筒方向（绝对角度）+ 人物跟随
-    // 2. 右摇杆未激活 + 正在移动 → 电筒方向缓慢回到移动方向，人物直接转移动方向
-    // 3. 右摇杆未激活 + 不移动 → 电筒方向保持，人物保持
-    const aimActive = window._mobileAim && window._mobileAim.active;
-    
-    if (aimActive) {
-        // 右摇杆激活：直接设置电筒方向（已在上面处理flashlightTarget）
-        // 人物也快速跟随右摇杆方向
-        const aimAngle = window._mobileAim.angle;
-        const worldAngle = -aimAngle + cameraAngle + Math.PI;
-        const targetRot = worldAngle;
-        let diff = targetRot - playerMesh.rotation.y;
-        while (diff > Math.PI) diff -= Math.PI * 2;
-        while (diff < -Math.PI) diff += Math.PI * 2;
-        playerMesh.rotation.y += diff * Math.min(10 * deltaTime, 1);
-    } else if (gameState.isMoving && (rotatedX !== 0 || rotatedZ !== 0)) {
-        // 移动中且无右摇杆：人物直接转向移动方向
-        const moveAngle = Math.atan2(rotatedX, rotatedZ);
-        let diff = moveAngle - playerMesh.rotation.y;
-        while (diff > Math.PI) diff -= Math.PI * 2;
-        while (diff < -Math.PI) diff += Math.PI * 2;
-        playerMesh.rotation.y += diff * Math.min(10 * deltaTime, 1);
-        
-        // 电筒方向缓慢回到移动方向（2.0弧度/秒）
-        if (gameState.flashlightTarget) {
-            const toTarget = new THREE.Vector3().subVectors(gameState.flashlightTarget.position, playerMesh.position);
-            toTarget.y = 0;
-            const currentFlashAngle = toTarget.length() > 0.5 ? Math.atan2(toTarget.x, toTarget.z) : playerMesh.rotation.y;
-            let fDiff = moveAngle - currentFlashAngle;
-            while (fDiff > Math.PI) fDiff -= Math.PI * 2;
-            while (fDiff < -Math.PI) fDiff += Math.PI * 2;
-            const lerpAngle = currentFlashAngle + fDiff * Math.min(2.0 * deltaTime, 1);
-            const dist = Math.max(toTarget.length(), 10);
-            gameState.flashlightTarget.position.set(
-                playerMesh.position.x + Math.sin(lerpAngle) * dist,
-                0,
-                playerMesh.position.z + Math.cos(lerpAngle) * dist
-            );
+    // 人物朝向 = 手电筒方向（人物始终面向手电筒照射方向）
+    if (gameState.flashlightTarget) {
+        const toTarget = new THREE.Vector3().subVectors(gameState.flashlightTarget.position, playerMesh.position);
+        toTarget.y = 0;
+        if (toTarget.length() > 0.5) {
+            const flashAngle = Math.atan2(toTarget.x, toTarget.z);
+            let diff = flashAngle - playerMesh.rotation.y;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            playerMesh.rotation.y += diff * Math.min(8 * deltaTime, 1);
         }
     }
-    // else: 两边都停 → 方向保持不变
     
     updateFlashlightDirection();
     
