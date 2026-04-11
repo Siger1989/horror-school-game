@@ -302,14 +302,18 @@ function applyLoadedPlayerModel(gltf) {
     });
     
     const currentPos = { x: playerMesh.position.x, z: playerMesh.position.z };
+    const currentRot = playerMesh.rotation.y;
     
-    while (playerMesh.children.length > 0) {
-        playerMesh.remove(playerMesh.children[0]);
-    }
-    playerMesh.add(model);
+    // 从场景中移除旧模型
+    scene.remove(playerMesh);
+    
+    // 直接用GLB模型作为新的playerMesh
+    playerMesh = model;
     playerMesh.position.set(currentPos.x, groundOffset, currentPos.z);
-    playerMesh.visible = true;
+    playerMesh.rotation.y = currentRot;
+    scene.add(playerMesh);
     
+    gameState.player = playerMesh;
     gameState.glbGroundOffset = groundOffset;
     gameState.usingGLBPlayer = true;
     gameState.glbBones = bones;
@@ -960,21 +964,9 @@ function createPlayer() {
     // 手电筒灯光（只创建一次，两种模型共用）
     createFlashlight();
     
-    // 先创建一个不可见占位 Group，确保 playerMesh 永远不为 null
-    // 避免游戏循环中访问 playerMesh.position 崩溃
-    const startX = -GAME_CONFIG.scene.gridWidth * GAME_CONFIG.scene.tileSize / 2 + 8;
-    playerMesh = new THREE.Group();
-    playerMesh.position.set(startX, 0, 0);
-    playerMesh.visible = false; // 加载完成前不可见
-    scene.add(playerMesh);
-    gameState.player = playerMesh;
-    
-    // GLB模型由 preloadAssets() 统一加载，不再在createPlayer中异步加载
-    // 如果没有GLTFLoader，直接用原始模型
-    if (!window.THREE || !window.THREE.GLTFLoader) {
-        createPrimitivePlayer();
-    }
-    // 否则等待 preloadAssets() 完成后调用 applyLoadedPlayerModel()
+    // 先创建原始模型作为可见占位，GLB加载成功后会替换
+    // 这样避免GLB异步加载期间玩家不可见
+    createPrimitivePlayer();
 }
 
 // 创建手电筒灯光（只调用一次）
@@ -1154,13 +1146,10 @@ function createPrimitivePlayer() {
     flashHead.castShadow = false;
     playerGroup.add(flashHead);
     
-    // 将原始模型加入占位Group（playerMesh已由createPlayer创建）
-    while (playerMesh.children.length > 0) {
-        playerMesh.remove(playerMesh.children[0]);
-    }
-    playerMesh.add(playerGroup);
+    // 设置位置
+    playerMesh = playerGroup;
     playerMesh.position.set(-GAME_CONFIG.scene.gridWidth * GAME_CONFIG.scene.tileSize / 2 + 8, 0, 0);
-    playerMesh.visible = true;
+    scene.add(playerMesh);
     
     gameState.player = playerMesh;
     gameState.usingGLBPlayer = false;
