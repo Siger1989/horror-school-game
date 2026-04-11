@@ -202,8 +202,11 @@ function init() {
     
     setupEventListeners();
     
-    // 预加载GLB模型，加载完再开始游戏循环
-    preloadAssets();
+    // 异步加载GLB模型（不阻塞游戏启动）
+    loadGLBModels();
+    
+    // 直接开始游戏循环
+    animate();
     
     } catch(e) {
         console.error('init()崩溃:', e.message, e.stack);
@@ -212,77 +215,13 @@ function init() {
 }
 
 // ============================================
-// 资源预加载系统
+// GLB模型异步加载（不阻塞游戏）
 // ============================================
-const assetLoader = {
-    loaded: 0,
-    total: 0,
-    assets: {},  // 存储加载完成的资源
-    callbacks: [],
-    
-    // 更新进度条
-    updateProgress(itemName) {
-        this.loaded++;
-        const pct = Math.round((this.loaded / this.total) * 100);
-        const bar = document.getElementById('loading-bar');
-        const text = document.getElementById('loading-text');
-        const percent = document.getElementById('loading-percent');
-        if (bar) bar.style.width = pct + '%';
-        if (percent) percent.textContent = pct + '%';
-        if (text) text.textContent = '加载: ' + itemName;
-        
-        if (this.loaded >= this.total) {
-            // 全部加载完成
-            setTimeout(() => {
-                const loadingScreen = document.getElementById('loading-screen');
-                if (loadingScreen) loadingScreen.style.display = 'none';
-                // 执行所有回调
-                this.callbacks.forEach(cb => cb());
-                // 开始游戏循环
-                animate();
-            }, 200);
-        }
-    },
-    
-    // 加载失败时的处理
-    onItemFailed(itemName) {
-        this.loaded++;
-        const pct = Math.round((this.loaded / this.total) * 100);
-        const bar = document.getElementById('loading-bar');
-        const percent = document.getElementById('loading-percent');
-        if (bar) bar.style.width = pct + '%';
-        if (percent) percent.textContent = pct + '%';
-        
-        if (this.loaded >= this.total) {
-            setTimeout(() => {
-                const loadingScreen = document.getElementById('loading-screen');
-                if (loadingScreen) loadingScreen.style.display = 'none';
-                this.callbacks.forEach(cb => cb());
-                animate();
-            }, 200);
-        }
-    }
-};
-
-function preloadAssets() {
-    // 显示加载界面
-    const loadingScreen = document.getElementById('loading-screen');
-    if (loadingScreen) loadingScreen.style.display = 'block';
-    
-    // 隐藏游戏UI直到加载完成
-    const startScreen = document.getElementById('start-screen');
-    if (startScreen) startScreen.style.display = 'none';
-    
-    // 计算需要加载的资源数量
-    let needLoad = 0;
-    if (window.THREE && window.THREE.GLTFLoader) needLoad += 2; // Aj.glb + monster.glb
-    assetLoader.total = Math.max(needLoad, 1);
-    assetLoader.loaded = 0;
-    
+function loadGLBModels() {
     if (!window.THREE || !window.THREE.GLTFLoader) {
-        // 没有GLTFLoader，直接开始
-        assetLoader.total = 1;
-        assetLoader.onItemFailed('无GLTFLoader，跳过');
+        // 没有GLTFLoader，回退原始模型
+        console.warn('无GLTFLoader，使用原始模型');
+        if (!gameState.usingGLBPlayer) createPrimitivePlayer();
         return;
     }
     
@@ -290,40 +229,23 @@ function preloadAssets() {
     
     // 加载玩家模型
     loader.load('./models/Aj.glb', (gltf) => {
-        assetLoader.assets.playerModel = gltf;
         applyLoadedPlayerModel(gltf);
-        assetLoader.updateProgress('角色模型');
-    }, 
-    (xhr) => {
-        // 进度回调
-        if (xhr.total > 0) {
-            const pct = Math.round((xhr.loaded / xhr.total) * 50); // 占总进度50%
-            const bar = document.getElementById('loading-bar');
-            if (bar) bar.style.width = pct + '%';
-        }
+        console.log('玩家GLB模型加载完成');
     },
+    undefined,
     (err) => {
         console.warn('玩家GLB加载失败，回退原始模型:', err);
         if (!gameState.usingGLBPlayer) createPrimitivePlayer();
-        assetLoader.onItemFailed('角色模型(失败)');
     });
     
     // 加载怪物模型
     loader.load('./models/monster.glb', (gltf) => {
-        assetLoader.assets.monsterModel = gltf;
         applyLoadedMonsterModel(gltf);
-        assetLoader.updateProgress('怪物模型');
+        console.log('怪物GLB模型加载完成');
     },
-    (xhr) => {
-        if (xhr.total > 0) {
-            const pct = 50 + Math.round((xhr.loaded / xhr.total) * 50); // 占总进度50%
-            const bar = document.getElementById('loading-bar');
-            if (bar) bar.style.width = pct + '%';
-        }
-    },
+    undefined,
     (err) => {
         console.warn('怪物GLB加载失败，保持原始模型:', err);
-        assetLoader.onItemFailed('怪物模型(失败)');
     });
 }
 
@@ -1997,10 +1919,6 @@ function setupEventListeners() {
     window.startGameFromLobby = function(seed) {
         document.getElementById('lobby-screen') && (document.getElementById('lobby-screen').style.display = 'none');
         document.getElementById('room-screen') && (document.getElementById('room-screen').style.display = 'none');
-        // 不隐藏 start-screen，因为加载进度条会覆盖它
-        // 显示加载进度条
-        const loadingScreen = document.getElementById('loading-screen');
-        if (loadingScreen) loadingScreen.style.display = 'block';
         gameState.isPlaying = true;
         // 启动联机同步
         if (typeof startSync === 'function') {
