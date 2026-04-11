@@ -3265,9 +3265,9 @@ function updateZombies(deltaTime) {
         }
         
         // 僵尸走路动画
-        if (zombie.usingGLB && zombie.mixer) {
-            // GLB模型：用AnimationMixer播放自带动画，手动骨骼叠加僵尸姿态
-            zombie.mixer.update(deltaTime);
+        if (zombie.usingGLB) {
+            // GLB模型：AnimationMixer + 手动骨骼叠加僵尸姿态
+            if (zombie.mixer) zombie.mixer.update(deltaTime);
             const zt = zombie.animTime;
             const chaseMult = zombie.state === 'chase' ? 1.5 : 1;
             const bones = zombie.bones;
