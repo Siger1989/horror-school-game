@@ -764,12 +764,22 @@ function createPlayer() {
     // 手电筒灯光（只创建一次，两种模型共用）
     createFlashlight();
     
-    // 先创建原始模型作为占位（同步，确保playerMesh立即可用）
-    createPrimitivePlayer();
+    // 先创建一个不可见占位 Group，确保 playerMesh 永远不为 null
+    // 避免游戏循环中访问 playerMesh.position 崩溃
+    const startX = -GAME_CONFIG.scene.gridWidth * GAME_CONFIG.scene.tileSize / 2 + 8;
+    playerMesh = new THREE.Group();
+    playerMesh.position.set(startX, 0, 0);
+    playerMesh.visible = false; // 加载完成前不可见
+    scene.add(playerMesh);
+    gameState.player = playerMesh;
     
-    // 再尝试异步加载GLB模型，加载成功后替换
+    // 优先尝试GLB模型，加载失败才回退原始模型
+    // 避免先创建原始模型再替换的双重资源浪费
     if (window.THREE && window.THREE.GLTFLoader) {
         createGLBPlayer();
+    } else {
+        // 没有GLTFLoader，直接用原始模型
+        createPrimitivePlayer();
     }
 }
 
@@ -847,21 +857,18 @@ function createGLBPlayer() {
             };
         });
         
-        // 保存旧模型的位置，然后移除旧模型
-        const oldPos = playerMesh ? { x: playerMesh.position.x, z: playerMesh.position.z } : null;
-        if (playerMesh) scene.remove(playerMesh);
+        // 保存当前位置（占位Group的位置）
+        const currentPos = { x: playerMesh.position.x, z: playerMesh.position.z };
         
-        playerMesh = model;
-        const startX = -GAME_CONFIG.scene.gridWidth * GAME_CONFIG.scene.tileSize / 2 + 8;
-        if (oldPos) {
-            playerMesh.position.set(oldPos.x, groundOffset, oldPos.z);
-        } else {
-            playerMesh.position.set(startX, groundOffset, 0);
+        // 清除占位Group内容，将GLB模型加入
+        while (playerMesh.children.length > 0) {
+            playerMesh.remove(playerMesh.children[0]);
         }
-        gameState.glbGroundOffset = groundOffset;
-        scene.add(playerMesh);
+        playerMesh.add(model);
+        playerMesh.position.set(currentPos.x, groundOffset, currentPos.z);
+        playerMesh.visible = true; // 加载完成，显示模型
         
-        gameState.player = playerMesh;
+        gameState.glbGroundOffset = groundOffset;
         gameState.usingGLBPlayer = true;
         gameState.glbBones = bones;
         gameState.glbOrigRot = origRot;
@@ -1025,10 +1032,13 @@ function createPrimitivePlayer() {
     flashHead.castShadow = false;
     playerGroup.add(flashHead);
     
-    playerMesh = playerGroup;
-    // 玩家从走廊西端出发
+    // 将原始模型加入占位Group（playerMesh已由createPlayer创建）
+    while (playerMesh.children.length > 0) {
+        playerMesh.remove(playerMesh.children[0]);
+    }
+    playerMesh.add(playerGroup);
     playerMesh.position.set(-GAME_CONFIG.scene.gridWidth * GAME_CONFIG.scene.tileSize / 2 + 8, 0, 0);
-    scene.add(playerMesh);
+    playerMesh.visible = true;
     
     gameState.player = playerMesh;
     gameState.usingGLBPlayer = false;
