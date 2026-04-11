@@ -3286,6 +3286,10 @@ function updateZombies(deltaTime) {
                     bones['BipTrump Spine1_025'].rotation.x += 0.15 + (zombie.state === 'chase' ? 0.1 : 0);
                     bones['BipTrump Spine1_025'].rotation.z += Math.sin(zt * 0.5) * 0.05;
                 }
+                // 头部左右摆
+                if (bones['BipTrump Head_01']) {
+                    bones['BipTrump Head_01'].rotation.z += Math.sin(zt * 0.3) * 0.08;
+                }
             }
         } else {
             // 原始模型：手动骨骼动画
@@ -3305,10 +3309,10 @@ function updateZombies(deltaTime) {
             p.torso.rotation.z = Math.sin(zt * 0.5) * 0.05;
             // 驼背追击时前倾更多
             p.torso.rotation.x = 0.15 + (zombie.state === 'chase' ? 0.1 : 0);
+            
+            // 头部微微左右摆
+            p.head.rotation.z = Math.sin(zt * 0.3) * 0.08;
         }
-        
-        // 头部微微左右摆
-        p.head.rotation.z = Math.sin(zt * 0.3) * 0.08;
         
         if (distanceToPlayer < 1.5) {
             takeDamage(20);
