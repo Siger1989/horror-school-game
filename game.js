@@ -78,7 +78,7 @@ const GAME_CONFIG = {
         exitDoorLocked: true,
     },
     camera: {
-        height: 13,
+        height: 8,
         distance: 7,
     },
 };
@@ -2883,17 +2883,45 @@ function updatePlayer(deltaTime) {
         gameState.playerGlow.intensity = (gameState.flashlightOn && gameState.battery > 0) ? 15 : 0.5;
     }
     
-    // 人物朝向 = 手电筒方向（人物始终面向手电筒照射方向）
+    // 人物朝向：移动时跟移动方向
+    if (gameState.isMoving && (rotatedX !== 0 || rotatedZ !== 0)) {
+        const moveAngle = Math.atan2(rotatedX, rotatedZ);
+        let diff = moveAngle - playerMesh.rotation.y;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        playerMesh.rotation.y += diff * Math.min(10 * deltaTime, 1);
+    }
+    
+    // 灯光方向：跟随身体方向（稍快），偏移限制±60度，停步后回位
     if (gameState.flashlightTarget) {
+        const bodyAngle = playerMesh.rotation.y;
         const toTarget = new THREE.Vector3().subVectors(gameState.flashlightTarget.position, playerMesh.position);
         toTarget.y = 0;
-        if (toTarget.length() > 0.5) {
-            const flashAngle = Math.atan2(toTarget.x, toTarget.z);
-            let diff = flashAngle - playerMesh.rotation.y;
-            while (diff > Math.PI) diff -= Math.PI * 2;
-            while (diff < -Math.PI) diff += Math.PI * 2;
-            playerMesh.rotation.y += diff * Math.min(8 * deltaTime, 1);
+        let flashAngle = toTarget.length() > 0.5 ? Math.atan2(toTarget.x, toTarget.z) : bodyAngle;
+        
+        // 计算灯光与身体的偏移
+        let offset = flashAngle - bodyAngle;
+        while (offset > Math.PI) offset -= Math.PI * 2;
+        while (offset < -Math.PI) offset += Math.PI * 2;
+        
+        // 限制偏移在±60度(PI/3)以内
+        const maxOffset = Math.PI / 3;
+        if (offset > maxOffset) offset = maxOffset;
+        if (offset < -maxOffset) offset = -maxOffset;
+        
+        // 停步时灯光缓慢回位到身体朝向（1.5弧度/秒）
+        if (!gameState.isMoving) {
+            offset *= Math.max(0, 1 - 1.5 * deltaTime);
         }
+        
+        // 灯光目标角度 = 身体角度 + 限制后的偏移
+        const targetFlashAngle = bodyAngle + offset;
+        const dist = Math.max(toTarget.length(), 10);
+        gameState.flashlightTarget.position.set(
+            playerMesh.position.x + Math.sin(targetFlashAngle) * dist,
+            0,
+            playerMesh.position.z + Math.cos(targetFlashAngle) * dist
+        );
     }
     
     updateFlashlightDirection();
