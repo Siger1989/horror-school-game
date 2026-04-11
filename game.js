@@ -878,6 +878,8 @@ function createGLBPlayer() {
 // 获取玩家Y坐标基准（GLB模型有groundOffset，原始模型为0）
 // 应用GLB模型idle姿态（消除T-Pose）
 function applyGLBIdlePose(bones) {
+    // 只修正T-Pose中明显不自然的骨骼（手臂水平展开）
+    // 其他骨骼保持原始旋转，不要全部归零！
     const pose = {
         LeftUpLeg: {x:0, y:0, z:0.05}, RightUpLeg: {x:0, y:0, z:-0.05},
         LeftLeg: {x:0, y:0, z:0}, RightLeg: {x:0, y:0, z:0},
@@ -895,13 +897,7 @@ function applyGLBIdlePose(bones) {
         bones[name].rotation.y = pose[name].y;
         bones[name].rotation.z = pose[name].z;
     });
-    // 其余骨骼全部归零（消除T-Pose中手臂水平展开等）
-    Object.keys(bones).forEach(name => {
-        if (pose[name]) return; // 已设置的跳过
-        bones[name].rotation.x = 0;
-        bones[name].rotation.y = 0;
-        bones[name].rotation.z = 0;
-    });
+    // 注意：不再把其余骨骼归零！保持原始旋转
 }
 
 function getPlayerGroundY() {
